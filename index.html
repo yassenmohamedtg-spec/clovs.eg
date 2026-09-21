@@ -16,6 +16,10 @@
   <!-- FontAwesome CDN -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
+  <!-- Firebase SDK (compat build to fit this single-file app) -->
+  <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-database-compat.js"></script>
+
   <script>
     const defaultPrimaryColor = '#059669';
     const defaultActionColor = '#ea580c';
@@ -494,6 +498,82 @@
       selectedProductId: null,
       editingProductId: null
     };
+
+    // ================= FIREBASE REALTIME DATABASE =================
+    // Firebase Web config is designed to live in client-side apps.
+    const firebaseConfig = {
+      apiKey: "AIzaSyCdH8Vu9vDRBxhMFhX3WO9GiyjSTcW8cZE",
+      authDomain: "clovs-eg.firebaseapp.com",
+      databaseURL: "https://clovs-eg-default-rtdb.firebaseio.com",
+      projectId: "clovs-eg",
+      storageBucket: "clovs-eg.firebasestorage.app",
+      messagingSenderId: "949361459796",
+      appId: "1:949361459796:web:8cee8082762ed71a9d23c1",
+      measurementId: "G-KZ9KT0687T"
+    };
+
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
+
+    const firebaseDB = firebase.database();
+    const productsRef = firebaseDB.ref('products');
+    let firebaseProductsListenerStarted = false;
+
+    function firebaseSnapshotToProducts(snapshot) {
+      const raw = snapshot.val() || {};
+      return Object.entries(raw).map(([key, value]) => ({
+        ...(value || {}),
+        id: (value && value.id) || key
+      })).sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
+    }
+
+    function refreshProductViewsAfterFirebaseSync() {
+      updateFavBadge();
+      if (appState.currentView === 'home') renderHomeView();
+      else if (appState.currentView === 'products') renderProductsCatalog();
+      else if (appState.currentView === 'favorites') renderFavoritesView();
+      else if (appState.currentView === 'product-details') renderProductDetailsView(appState.selectedProductId);
+      else if (appState.currentView === 'product-manager') renderProductManagerDashboard();
+    }
+
+    function startFirebaseProductsSync() {
+      if (firebaseProductsListenerStarted) return;
+      firebaseProductsListenerStarted = true;
+
+      productsRef.on('value', (snapshot) => {
+        appState.products = firebaseSnapshotToProducts(snapshot);
+        refreshProductViewsAfterFirebaseSync();
+        console.info(`[Clovs Firebase] synced ${appState.products.length} products`);
+      }, (error) => {
+        console.error('[Clovs Firebase] products read failed:', error);
+        showToast('تعذر تحميل المنتجات من Firebase. راجع Database Rules.', 'error');
+      });
+    }
+
+    async function firebaseSaveProduct(productId, productData) {
+      const payload = {
+        ...productData,
+        updatedAt: firebase.database.ServerValue.TIMESTAMP
+      };
+
+      if (productId) {
+        payload.id = productId;
+        await productsRef.child(productId).update(payload);
+        return productId;
+      }
+
+      const newRef = productsRef.push();
+      payload.id = newRef.key;
+      payload.createdAt = firebase.database.ServerValue.TIMESTAMP;
+      await newRef.set(payload);
+      return newRef.key;
+    }
+
+    async function firebaseDeleteProduct(productId) {
+      await productsRef.child(productId).remove();
+    }
+    // =============================================================
 
     function showToast(message, type = 'success') {
       const container = document.getElementById('toast-container');
@@ -1889,7 +1969,7 @@
       document.getElementById('modal-message').innerHTML = formHtml;
     }
 
-    function saveProductForm() {
+    async function saveProductForm() {
       const name = document.getElementById('pm-name').value.trim();
       const category = document.getElementById('pm-category')?.value || 'عام';
       const price = parseFloat(document.getElementById('pm-price').value);
@@ -1903,36 +1983,45 @@
         return;
       }
 
-      if (appState.editingProductId) {
-        const p = appState.products.find(x => x.id === appState.editingProductId);
-        if (p) {
-          p.name = name;
-          p.category = category;
-          p.price = price;
-          p.stock = stock;
-          p.desc = desc;
-          p.image = finalImg;
-          showToast('تم تحديث بيانات المنتج بنجاح');
-        }
-      } else {
-        appState.products.unshift({
-          id: 'PROD-' + Math.floor(1000 + Math.random() * 9000),
-          name, category, price, stock, desc, image: finalImg
-        });
-        showToast('تمت إضافة المنتج الجديد للكتالوج بنجاح');
+      const editId = appState.editingProductId || null;
+      const saveButton = document.querySelector('#modal-actions button[onclick="saveProductForm()"]');
+      if (saveButton) {
+        saveButton.disabled = true;
+        saveButton.innerText = 'جاري الحفظ...';
       }
 
-      tempUploadedProductImage = '';
-      closeModal();
-      renderProductManagerDashboard();
+      try {
+        await firebaseSaveProduct(editId, {
+          name,
+          category,
+          price,
+          stock,
+          desc,
+          image: finalImg,
+          source: editId ? 'website-edit' : 'website'
+        });
+
+        tempUploadedProductImage = '';
+        appState.editingProductId = null;
+        closeModal();
+        showToast(editId ? 'تم تحديث المنتج وحفظه في Firebase' : 'تمت إضافة المنتج إلى Firebase بنجاح');
+      } catch (error) {
+        console.error('[Clovs Firebase] save product failed:', error);
+        showToast('فشل حفظ المنتج في Firebase. راجع صلاحيات Database Rules.', 'error');
+        if (saveButton) {
+          saveButton.disabled = false;
+          saveButton.innerText = 'حفظ المنتج';
+        }
+      }
     }
 
-    function deleteProduct(id) {
-      const idx = appState.products.findIndex(x => x.id === id);
-      if (idx > -1) {
-        appState.products.splice(idx, 1);
-        showToast('تم حذف المنتج من الكتالوج');
-        renderProductManagerDashboard();
+    async function deleteProduct(id) {
+      try {
+        await firebaseDeleteProduct(id);
+        showToast('تم حذف المنتج من Firebase');
+      } catch (error) {
+        console.error('[Clovs Firebase] delete product failed:', error);
+        showToast('فشل حذف المنتج من Firebase. راجع الصلاحيات.', 'error');
       }
     }
 
@@ -2801,261 +2890,8 @@
       updateFavBadge();
       updateCartBadge();
       switchView('home');
+      startFirebaseProductsSync();
     };
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>متجر Clovs EG - حفظ دائم للمنتجات</title>
-  <style>
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background-color: #f8f9fa;
-      margin: 0;
-      padding: 20px;
-      direction: rtl;
-    }
-    .main-container {
-      max-width: 900px;
-      margin: auto;
-    }
-    h1 {
-      text-align: center;
-      color: #333;
-    }
-    /* صندوق إضافة المنتج */
-    .add-box {
-      background: #ffffff;
-      padding: 20px;
-      border-radius: 10px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.05);
-      margin-bottom: 30px;
-    }
-    .form-group {
-      margin-bottom: 15px;
-    }
-    label {
-      display: block;
-      margin-bottom: 5px;
-      font-weight: bold;
-      color: #555;
-    }
-    input {
-      width: 100%;
-      padding: 10px;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-      box-sizing: border-box;
-      font-size: 14px;
-    }
-    .btn-save {
-      background-color: #007bff;
-      color: white;
-      border: none;
-      padding: 12px 20px;
-      font-size: 16px;
-      font-weight: bold;
-      border-radius: 6px;
-      cursor: pointer;
-      width: 100%;
-    }
-    .btn-save:hover {
-      background-color: #0056b3;
-    }
-    /* شبكة عرض المنتجات */
-    .products-list {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-      gap: 20px;
-    }
-    .card {
-      background: white;
-      border-radius: 8px;
-      padding: 15px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-      text-align: center;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-    }
-    .card img {
-      width: 100%;
-      height: 160px;
-      object-fit: cover;
-      border-radius: 6px;
-      margin-bottom: 10px;
-    }
-    .card h3 {
-      margin: 10px 0;
-      color: #222;
-      font-size: 18px;
-    }
-    .card .price {
-      font-size: 16px;
-      font-weight: bold;
-      color: #28a745;
-      margin-bottom: 15px;
-    }
-    .btn-delete {
-      background-color: #dc3545;
-      color: white;
-      border: none;
-      padding: 8px 12px;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-    .btn-delete:hover {
-      background-color: #bd2130;
-    }
-    .status-msg {
-      text-align: center;
-      grid-column: 1 / -1;
-      color: #777;
-    }
-  </style>
-</head>
-<body>
-
-  <div class="main-container">
-    <h1>لوحة إدارة المنتجات - Clovs EG</h1>
-
-    <!-- نموذج إدخال المنتج -->
-    <div class="add-box">
-      <h2>إضافة منتج جديد</h2>
-      <form id="productForm">
-        <div class="form-group">
-          <label for="title">اسم المنتج:</label>
-          <input type="text" id="title" placeholder="مثال: سويت شيرت كحلي" required />
-        </div>
-        <div class="form-group">
-          <label for="price">السعر بالجنيه:</label>
-          <input type="number" id="price" placeholder="مثال: 350" required />
-        </div>
-        <div class="form-group">
-          <label for="image">رابط الصورة (URL مباشر):</label>
-          <input type="url" id="image" placeholder="مثال: https://images.unsplash.com/..." required />
-        </div>
-        <button type="submit" id="saveBtn" class="btn-save">حفظ المنتج في السحابة</button>
-      </form>
-    </div>
-
-    <!-- شبكة عرض المنتجات -->
-    <h2>المنتجات المحفوظة</h2>
-    <div class="products-list" id="productsGrid">
-      <p class="status-msg">جاري تحميل البيانات من السحابة...</p>
-    </div>
-  </div>
-
-  <!-- ربط Firebase Firestore ببيانات مشروعك -->
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { 
-      getFirestore, 
-      collection, 
-      addDoc, 
-      getDocs, 
-      deleteDoc, 
-      doc 
-    } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-
-    // بيانات مشروعك المدمجة
-    const firebaseConfig = {
-      apiKey: "AIzaSyCdH8Vu9vDRBxhMFhX3WO9GiyjSTcW8cZE",
-      authDomain: "clovs-eg.firebaseapp.com",
-      projectId: "clovs-eg",
-      storageBucket: "clovs-eg.firebasestorage.app",
-      messagingSenderId: "949361459796",
-      appId: "1:949361459796:web:8cee8082762ed71a9d23c1",
-      measurementId: "G-KZ9KT0687T"
-    };
-
-    // تشغيل الاتصال
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-    const productsRef = collection(db, "products");
-
-    const form = document.getElementById("productForm");
-    const grid = document.getElementById("productsGrid");
-    const saveBtn = document.getElementById("saveBtn");
-
-    // دالة جلب المنتجات من السحابة وعرضها
-    async function loadProducts() {
-      grid.innerHTML = '<p class="status-msg">جاري جلب المنتجات...</p>';
-      try {
-        const querySnapshot = await getDocs(productsRef);
-        grid.innerHTML = "";
-
-        if (querySnapshot.empty) {
-          grid.innerHTML = '<p class="status-msg">لا توجد أي منتجات حتى الآن. أضف منتجك الأول من النموذج أعلاه!</p>';
-          return;
-        }
-
-        querySnapshot.forEach((docItem) => {
-          const item = docItem.data();
-          const docId = docItem.id;
-
-          const card = document.createElement("div");
-          card.className = "card";
-          card.innerHTML = `
-            <img src="${item.image}" alt="${item.title}" onerror="this.src='https://via.placeholder.com/200x160?text=خطأ+في+الصورة'">
-            <h3>${item.title}</h3>
-            <div class="price">${item.price} ج.م</div>
-            <button class="btn-delete" data-id="${docId}">حذف المنتج</button>
-          `;
-          grid.appendChild(card);
-        });
-
-        // تفعيل أزرار الحذف
-        document.querySelectorAll(".btn-delete").forEach((btn) => {
-          btn.addEventListener("click", async (e) => {
-            const id = e.target.getAttribute("data-id");
-            if (confirm("هل تريد حذف هذا المنتج نهائياً من السحابة؟")) {
-              await deleteDoc(doc(db, "products", id));
-              loadProducts();
-            }
-          });
-        });
-
-      } catch (err) {
-        console.error("حدث خطأ:", err);
-        grid.innerHTML = '<p class="status-msg" style="color:red;">حدث خطأ في جلب البيانات! تأكد أنك فعّلت Firestore في مشروعك على وضع Test Mode.</p>';
-      }
-    }
-
-    // دالة إرسال منتج جديد وحفظه
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-
-      const title = document.getElementById("title").value.trim();
-      const price = document.getElementById("price").value.trim();
-      const image = document.getElementById("image").value.trim();
-
-      saveBtn.disabled = true;
-      saveBtn.textContent = "جاري الحفظ في السحابة...";
-
-      try {
-        await addDoc(productsRef, {
-          title: title,
-          price: Number(price),
-          image: image,
-          createdAt: new Date()
-        });
-
-        form.reset();
-        await loadProducts();
-        alert("تم حفظ المنتج بنجاح في السحابة ولن يختفي أبداً!");
-      } catch (err) {
-        console.error("فشل الحفظ:", err);
-        alert("فشل الحفظ! تأكد من أن قواعد Firestore مضبوطة على وضع Test Mode.");
-      } finally {
-        saveBtn.disabled = false;
-        saveBtn.textContent = "حفظ المنتج في السحابة";
-      }
-    });
-
-    // جلب المنتجات تلقائياً بمجرد فتح الصفحة
-    loadProducts();
   </script>
 </body>
 </html>
