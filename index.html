@@ -18,6 +18,7 @@
 
   <!-- Firebase SDK (compat build to fit this single-file app) -->
   <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-database-compat.js"></script>
 
   <script>
@@ -323,15 +324,27 @@
           <p class="text-slate-500 text-sm">سجل دخولك أو أنشئ حساباً جديداً للوصول لخدمات المنصة</p>
         </div>
 
+        <div class="rounded-2xl border-2 border-brand-100 bg-brand-50/60 p-5 space-y-3 shadow-sm">
+          <div class="flex items-center gap-2 text-lg font-black text-slate-900"><i class="fa-solid fa-shield-halved text-brand-600"></i> دخول المدير عبر Firebase</div>
+          <p class="text-xs text-slate-500">استخدم طريقة الدخول المرتبطة بحسابك في Firebase Authentication.</p>
+          <form id="form-firebase-admin" onsubmit="handleFirebaseAdminLogin(event)" class="space-y-3">
+            <input type="email" id="firebase-admin-email" required autocomplete="username" placeholder="البريد الإلكتروني" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm" dir="ltr">
+            <input type="password" id="firebase-admin-password" required autocomplete="current-password" placeholder="كلمة مرور Firebase" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm" dir="ltr">
+            <button type="submit" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-xl text-sm">دخول المدير الآمن</button>
+          </form>
+          <button type="button" onclick="handleFirebaseGoogleAdminLogin()" class="w-full bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 font-bold py-3 rounded-xl text-sm"><i class="fa-brands fa-google ml-2"></i> الدخول بحساب Google المرتبط بـFirebase</button>
+        </div>
+
         <div class="flex bg-slate-100 p-1.5 rounded-2xl">
           <button id="tab-login-btn" onclick="switchAuthTab('login')" class="flex-1 py-2.5 rounded-xl font-bold text-sm bg-white text-brand-600 shadow-sm transition">تسجيل الدخول</button>
           <button id="tab-register-btn" onclick="switchAuthTab('register')" class="flex-1 py-2.5 rounded-xl font-bold text-sm text-slate-600 transition">إنشاء حساب</button>
         </div>
 
         <form id="form-login" onsubmit="handleLogin(event)" class="space-y-4">
+          <p class="text-xs text-slate-500 bg-brand-50 border border-brand-100 rounded-xl p-3">للمسوقين: ادخل باسم المستخدم المعتاد. المدير يستخدم قسم Firebase الواضح بالأعلى.</p>
           <div>
-            <label class="block text-xs font-bold text-slate-700 mb-1.5">اسم المستخدم</label>
-            <input type="text" id="login-username" required placeholder="أدخل اسم المستخدم..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-500 transition">
+            <label class="block text-xs font-bold text-slate-700 mb-1.5">اسم المستخدم أو بريد المدير في Firebase</label>
+            <input type="text" id="login-username" required autocomplete="username" placeholder="اسم المستخدم للمسوق أو بريد المدير..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-500 transition">
           </div>
           <div>
             <label class="block text-xs font-bold text-slate-700 mb-1.5">كلمة المرور</label>
@@ -341,6 +354,8 @@
             تسجيل الدخول للنظام
           </button>
         </form>
+
+
 
         <form id="form-register" onsubmit="handleRegister(event)" class="space-y-4 hidden">
           <div>
@@ -484,9 +499,7 @@
 
     let appState = {
       currentUser: null,
-      usersList: [
-        { id: 'usr-super', name: 'المدير الأساسي', username: 'Yass154@', password: '2677Yass', role: 'super_admin', status: 'approved', balance: 0, payoutDetails: '', phone: '01020327694' }
-      ],
+      usersList: [],
       products: [],
       categories: ['إلكترونيات وموبايلات', 'ساعات وإكسسوارات', 'أدوات منزلية', 'عناية وصحة', 'ملابس وأحذية'],
       selectedCategoryFilter: 'all',
@@ -538,10 +551,44 @@
     }
 
     const firebaseDB = firebase.database();
+    const firebaseAuth = firebase.auth();
+    const FIREBASE_ADMIN_UID = 'zAeUYXEN3jS18kBC3QXZOVcedk12';
     const productsRef = firebaseDB.ref('products');
     const slidesRef = firebaseDB.ref('siteSettings/slides');
     const socialLinksRef = firebaseDB.ref('siteSettings/socialLinks');
     let firebaseProductsListenerStarted = false;
+
+    function setFirebaseAdminSession(authUser) {
+      if (!authUser || authUser.uid !== FIREBASE_ADMIN_UID) return false;
+      let admin = appState.usersList.find(u => u.id === `firebase-${FIREBASE_ADMIN_UID}`);
+      if (!admin) {
+        admin = {
+          id: `firebase-${FIREBASE_ADMIN_UID}`, name: 'المدير الأساسي',
+          username: authUser.email || 'Firebase Admin', password: '',
+          role: 'super_admin', status: 'approved', balance: 0, firebaseAdmin: true
+        };
+        appState.usersList.unshift(admin);
+      }
+      appState.currentUser = admin;
+      updateHeaderAuthUI();
+      updateSidebarContent();
+      return true;
+    }
+
+    firebaseAuth.onAuthStateChanged(async (authUser) => {
+      if (authUser && authUser.uid !== FIREBASE_ADMIN_UID) {
+        await firebaseAuth.signOut();
+        showToast('حساب Firebase ده غير مصرح له بإدارة الموقع', 'error');
+        return;
+      }
+      if (authUser) setFirebaseAdminSession(authUser);
+      else if (appState.currentUser?.firebaseAdmin) {
+        appState.currentUser = null;
+        updateHeaderAuthUI();
+        updateSidebarContent();
+        if (appState.currentView === 'super-customizer' || appState.currentView === 'admin-dashboard') switchView('home');
+      }
+    });
 
     function firebaseSnapshotToProducts(snapshot) {
       const raw = snapshot.val() || {};
@@ -893,7 +940,7 @@
           `;
         }
 
-        if (user.role === 'product_manager') {
+        if (user.role === 'product_manager' || user.role === 'super_admin') {
           html += `
             <div class="pt-4 pb-2 px-4 text-xs font-black text-slate-400 uppercase tracking-wider">إدارة المنتجات</div>
             <button onclick="switchView('product-manager')" class="w-full text-right px-4 py-3 rounded-xl font-bold text-slate-700 hover:bg-slate-50 hover:text-brand-600 transition flex items-center gap-3 text-sm">
@@ -1559,18 +1606,32 @@
       }
     }
 
-    function handleLogin(e) {
+    async function handleLogin(e) {
       e.preventDefault();
       const u = document.getElementById('login-username').value.trim();
-      const p = document.getElementById('login-password').value.trim();
+      const password = document.getElementById('login-password').value;
 
-      const user = appState.usersList.find(x => x.username === u && x.password === p);
+      const user = appState.usersList.find(x => x.username === u && x.password === password.trim());
       if (!user) {
-        showToast('اسم المستخدم أو كلمة المرور غير صحيحة', 'error');
+        if (u.includes('@') && u.includes('.')) {
+          try {
+            await signInFirebaseAdminWithEmail(u, password);
+            document.getElementById('login-password').value = '';
+          } catch (error) {
+            console.error('[Clovs Firebase] admin sign in failed:', error);
+            showToast(error.message === 'unauthorized-admin' ? 'البريد ده مش تابع لحساب مدير Firebase المصرح له' : 'دخول Firebase فشل. تأكد من البريد وكلمة المرور وطريقة تسجيل الحساب.', 'error');
+          }
+          return;
+        }
+        showToast('بيانات المسوق غير صحيحة. لو أنت المدير، ادخل ببريد Firebase أو زر Google.', 'error');
         return;
       }
       if (user.status !== 'approved') {
         showToast('حسابك قيد مراجعة وتفعيل الإدارة حالياً', 'error');
+        return;
+      }
+      if (user.role === 'super_admin') {
+        showToast('دخول المدير متاح فقط عبر Firebase Authentication في الأسفل', 'error');
         return;
       }
 
@@ -1578,6 +1639,53 @@
       updateHeaderAuthUI();
       showToast(`مرحباً بك مجدداً يا ${user.name}!`);
       switchView('home');
+    }
+
+    async function handleFirebaseAdminLogin(e) {
+      e.preventDefault();
+      const email = document.getElementById('firebase-admin-email').value.trim();
+      const password = document.getElementById('firebase-admin-password').value;
+      const button = e.target.querySelector('button[type="submit"]');
+      button.disabled = true;
+      button.innerText = 'جاري التحقق...';
+      try {
+        await signInFirebaseAdminWithEmail(email, password);
+        document.getElementById('firebase-admin-password').value = '';
+      } catch (error) {
+        console.error('[Clovs Firebase] admin sign in failed:', error);
+        const msg = error.message === 'unauthorized-admin'
+          ? 'حساب Firebase ده لا يطابق UID المدير المصرح له'
+          : 'تعذر دخول المدير. تحقق من البريد وكلمة المرور وتفعيل Email/Password في Firebase Authentication.';
+        showToast(msg, 'error');
+      } finally {
+        button.disabled = false;
+        button.innerText = 'دخول المدير الآمن';
+      }
+    }
+
+    async function signInFirebaseAdminWithEmail(email, password) {
+      const credential = await firebaseAuth.signInWithEmailAndPassword(email, password);
+      await finishFirebaseAdminLogin(credential.user);
+    }
+
+    async function handleFirebaseGoogleAdminLogin() {
+      try {
+        const credential = await firebaseAuth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+        await finishFirebaseAdminLogin(credential.user);
+      } catch (error) {
+        if (error.code === 'auth/popup-closed-by-user') return;
+        console.error('[Clovs Firebase] Google admin sign in failed:', error);
+        showToast(error.message === 'unauthorized-admin' ? 'حساب Google ده لا يطابق UID المدير' : 'تعذر دخول Google. فعّل Google في Firebase وأضف نطاق موقعك للنطاقات المسموحة.', 'error');
+      }
+    }
+
+    async function finishFirebaseAdminLogin(authUser) {
+      if (!setFirebaseAdminSession(authUser)) {
+        await firebaseAuth.signOut();
+        throw new Error('unauthorized-admin');
+      }
+      showToast('تم تسجيل دخول المدير عبر Firebase');
+      switchView('super-customizer');
     }
 
     function handleRegister(e) {
@@ -1614,7 +1722,15 @@
       }
     }
 
-    function handleLogout() {
+    async function handleLogout() {
+      if (firebaseAuth.currentUser) {
+        try { await firebaseAuth.signOut(); }
+        catch (error) {
+          console.error('[Clovs Firebase] sign out failed:', error);
+          showToast('تعذر تسجيل الخروج من Firebase. حاول مرة أخرى.', 'error');
+          return;
+        }
+      }
       appState.currentUser = null;
       updateHeaderAuthUI();
       showToast('تم تسجيل الخروج بنجاح');
@@ -2366,7 +2482,7 @@
             <td class="py-3 px-3 text-slate-600 font-mono">${u.phone || 'غير مسجل'}</td>
             <td class="py-3 px-3"><span class="px-2.5 py-1 rounded-full text-[11px] font-black ${roleBadgeColor}">${roleName}</span></td>
             <td class="py-3 px-3">${balanceDisplay}</td>
-            <td class="py-3 px-3 font-mono font-bold text-slate-800 bg-slate-50 px-2 rounded-lg">${u.password}</td>
+            <td class="py-3 px-3 font-mono font-bold text-slate-800 bg-slate-50 px-2 rounded-lg">${u.firebaseAdmin ? 'Firebase Auth' : u.password}</td>
             <td class="py-3 px-3 flex items-center gap-2">
               <button onclick="editUserModal('${u.id}')" class="bg-brand-50 hover:bg-brand-600 text-brand-700 hover:text-white font-bold px-3 py-1.5 rounded-xl transition text-xs flex items-center gap-1">
                 <i class="fa-solid fa-user-pen"></i> تحكم وتعديل
@@ -2787,6 +2903,10 @@
     function editUserModal(userId) {
       const user = appState.usersList.find(u => u.id === userId);
       if (!user) return;
+      if (user.firebaseAdmin) {
+        showToast('بيانات حساب المدير تُدار من Firebase Authentication', 'info');
+        return;
+      }
 
       const isSuper = user.role === 'super_admin';
 
