@@ -66,6 +66,10 @@
     ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
     .fade-in { animation: fadeIn 0.25s ease-in-out forwards; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+    .product-card { transition: transform .25s ease, box-shadow .25s ease; }
+    .product-card:hover { transform: translateY(-5px); box-shadow: 0 22px 45px -24px rgba(15, 23, 42, .35); }
+    .social-card { transition: transform .25s ease, box-shadow .25s ease; }
+    .social-card:hover { transform: translateY(-4px); box-shadow: 0 20px 36px -22px rgba(15, 23, 42, .3); }
   </style>
 </head>
 
@@ -138,6 +142,9 @@
         </button>
         <button onclick="switchView('products')" class="nav-btn px-4 py-2 rounded-xl text-xs sm:text-sm font-bold text-slate-700 hover:bg-white hover:text-brand-600 transition shadow-none" data-view="products">
           <i class="fa-solid fa-bag-shopping ml-1 text-xs"></i> المنتجات
+        </button>
+        <button onclick="switchView('social')" class="nav-btn px-4 py-2 rounded-xl text-xs sm:text-sm font-bold text-slate-700 hover:bg-white hover:text-brand-600 transition shadow-none" data-view="social">
+          <i class="fa-solid fa-hashtag ml-1 text-xs"></i> تابعنا
         </button>
         <button onclick="switchView('top-marketers')" class="nav-btn px-4 py-2 rounded-xl text-xs sm:text-sm font-bold text-slate-700 hover:bg-white hover:text-brand-600 transition shadow-none" data-view="top-marketers">
           <i class="fa-solid fa-trophy ml-1 text-xs text-amber-500"></i> أفضل المسوقين
@@ -373,6 +380,18 @@
     <div id="view-admin-dashboard" class="app-view space-y-6 hidden fade-in"></div>
     <div id="view-super-customizer" class="app-view space-y-6 hidden fade-in"></div>
 
+    <div id="view-social" class="app-view space-y-7 hidden fade-in">
+      <div class="rounded-3xl bg-slate-900 text-white p-8 sm:p-12 relative overflow-hidden">
+        <div class="absolute -left-16 -top-20 w-64 h-64 bg-brand-500/20 rounded-full blur-3xl pointer-events-none"></div>
+        <div class="relative max-w-2xl">
+          <span class="inline-flex bg-white/10 border border-white/15 px-4 py-1.5 rounded-full text-xs font-bold mb-4">مجتمع Clovs</span>
+          <h2 class="text-3xl sm:text-4xl font-black mb-3">تابعنا وخلّيك أول واحد يعرف الجديد</h2>
+          <p class="text-slate-300 text-sm sm:text-base leading-relaxed">أحدث المنتجات والعروض وتحديثات المنصة على حساباتنا الرسمية.</p>
+        </div>
+      </div>
+      <div id="social-links-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"></div>
+    </div>
+
     <!-- VIEW 12: SHIPPING RATES -->
     <div id="view-shipping-rates" class="app-view space-y-6 hidden fade-in">
       <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
@@ -444,6 +463,7 @@
       <div class="flex justify-center gap-6 text-xs text-slate-500">
         <button onclick="switchView('returns-policy')" class="hover:text-brand-600 transition">سياسة الاستبدال والاسترجاع</button>
         <button onclick="switchView('contact-support')" class="hover:text-brand-600 transition">الدعم والتواصل</button>
+        <button onclick="switchView('social')" class="hover:text-brand-600 transition">حسابات السوشيال</button>
         <button onclick="switchView('top-marketers')" class="hover:text-brand-600 transition">أفضل المسوقين</button>
         <button onclick="switchView('legal-info')" class="hover:text-brand-600 transition">الحقوق والمعلومات</button>
       </div>
@@ -485,6 +505,7 @@
         whatsappGroup: 'https://chat.whatsapp.com/example-marketers-group',
         hours: 'متاحون طوال أيام الأسبوع من 10 صباحاً حتى 10 مساءً'
       },
+      socialLinks: { facebook: '', instagram: '', tiktok: '' },
       activeCart: {
         items: [],
         customer: { name: '', phone: '', address: '', governorate: 'القاهرة' },
@@ -518,6 +539,8 @@
 
     const firebaseDB = firebase.database();
     const productsRef = firebaseDB.ref('products');
+    const slidesRef = firebaseDB.ref('siteSettings/slides');
+    const socialLinksRef = firebaseDB.ref('siteSettings/socialLinks');
     let firebaseProductsListenerStarted = false;
 
     function firebaseSnapshotToProducts(snapshot) {
@@ -543,11 +566,39 @@
 
       productsRef.on('value', (snapshot) => {
         appState.products = firebaseSnapshotToProducts(snapshot);
+        appState.activeCart.items.forEach(item => {
+          const current = appState.products.find(p => p.id === item.product.id);
+          if (current) item.product = current;
+        });
         refreshProductViewsAfterFirebaseSync();
         console.info(`[Clovs Firebase] synced ${appState.products.length} products`);
       }, (error) => {
         console.error('[Clovs Firebase] products read failed:', error);
         showToast('تعذر تحميل المنتجات من Firebase. راجع Database Rules.', 'error');
+      });
+    }
+
+    function startFirebaseSiteSettingsSync() {
+      slidesRef.on('value', (snapshot) => {
+        const data = snapshot.val();
+        if (data !== null) {
+          const slides = Array.isArray(data) ? data : Object.values(data);
+          if (slides.length) appState.slides = slides;
+        }
+        appState.currentSlideIdx = Math.min(appState.currentSlideIdx, appState.slides.length - 1);
+        if (appState.currentView === 'home') renderSlider();
+        if (appState.currentView === 'super-customizer') renderSuperCustomizerView();
+      }, (error) => {
+        console.error('[Clovs Firebase] slides read failed:', error);
+        showToast('تعذر تحميل السلايدر من قاعدة البيانات', 'error');
+      });
+      socialLinksRef.on('value', (snapshot) => {
+        appState.socialLinks = { facebook: '', instagram: '', tiktok: '', ...(snapshot.val() || {}) };
+        if (appState.currentView === 'social') renderSocialView();
+        if (appState.currentView === 'super-customizer') renderSuperCustomizerView();
+      }, (error) => {
+        console.error('[Clovs Firebase] social links read failed:', error);
+        showToast('تعذر تحميل روابط السوشيال من قاعدة البيانات', 'error');
       });
     }
 
@@ -781,6 +832,7 @@
       else if (viewName === 'super-customizer') renderSuperCustomizerView();
       else if (viewName === 'shipping-rates') renderShippingRatesView();
       else if (viewName === 'contact-support') renderContactSupportView();
+      else if (viewName === 'social') renderSocialView();
     }
 
     function updateSidebarContent() {
@@ -819,6 +871,9 @@
         </button>
         <button onclick="switchView('contact-support')" class="w-full text-right px-4 py-3 rounded-xl font-bold text-slate-700 hover:bg-slate-50 hover:text-brand-600 transition flex items-center gap-3 text-sm">
           <i class="fa-solid fa-headset text-brand-600 w-5"></i> الدعم وتواصل الواتساب
+        </button>
+        <button onclick="switchView('social')" class="w-full text-right px-4 py-3 rounded-xl font-bold text-slate-700 hover:bg-slate-50 hover:text-brand-600 transition flex items-center gap-3 text-sm">
+          <i class="fa-solid fa-hashtag text-brand-600 w-5"></i> حسابات السوشيال
         </button>
       `;
 
@@ -903,12 +958,10 @@
       appState.products.slice(0, 4).forEach(prod => {
         const isFav = appState.favorites.includes(prod.id);
         html += `
-          <div class="bg-white rounded-3xl border border-slate-100 shadow-sm hover:shadow-xl transition overflow-hidden flex flex-col relative group">
+          <div class="product-card bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col relative group">
             <div class="relative h-48 bg-slate-100 overflow-hidden">
               <img src="${prod.image}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" onerror="this.src='https://placehold.co/400x300/e2e8f0/64748b?text=Clovs'">
-              <span class="absolute top-3 right-3 bg-white/90 backdrop-blur-md text-slate-900 font-extrabold text-xs px-3 py-1.5 rounded-full shadow">
-                ${prod.price} ج.م
-              </span>
+              ${discountBadge(prod)}
               <button onclick="event.stopPropagation(); toggleFavorite('${prod.id}')" class="absolute top-3 left-3 w-9 h-9 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center shadow hover:scale-110 transition ${isFav ? 'text-rose-500' : 'text-slate-400 hover:text-rose-500'}">
                 <i class="fa-${isFav ? 'solid' : 'regular'} fa-heart text-sm"></i>
               </button>
@@ -917,6 +970,7 @@
               <div class="space-y-1">
                 <h4 class="font-black text-slate-900 text-lg line-clamp-1">${prod.name}</h4>
                 <p class="text-slate-500 text-xs line-clamp-2 leading-relaxed">${prod.desc}</p>
+                ${productPriceHtml(prod)}
               </div>
               <button onclick="switchView('product-details', '${prod.id}')" class="w-full bg-brand-50 hover:bg-brand-600 text-brand-700 hover:text-white font-bold py-2.5 rounded-xl transition text-sm flex items-center justify-center gap-2">
                 <i class="fa-solid fa-eye"></i> تفاصيل المنتج والعمولة
@@ -948,6 +1002,31 @@
         dotsHtml += `<button onclick="appState.currentSlideIdx = ${idx}; renderSlider();" class="h-2 rounded-full transition-all duration-300 ${active}"></button>`;
       });
       dotsContainer.innerHTML = dotsHtml;
+    }
+
+    function discountRate(prod) {
+      const n = Number(prod.discountPercent);
+      return Number.isFinite(n) && n > 0 && n < 100 ? n : 0;
+    }
+
+    function getProductPrice(prod) {
+      const base = Number(prod.price) || 0;
+      return Math.round(base * (1 - discountRate(prod) / 100) * 100) / 100;
+    }
+
+    function money(value) {
+      return Number(value).toLocaleString('ar-EG', { maximumFractionDigits: 2 });
+    }
+
+    function discountBadge(prod) {
+      return discountRate(prod) ? `<span class="absolute top-3 right-3 bg-rose-600 text-white font-black text-xs px-3 py-1.5 rounded-full shadow">خصم ${discountRate(prod)}٪</span>` : '';
+    }
+
+    function productPriceHtml(prod) {
+      return `<div class="pt-3 mt-3 border-t border-slate-100 flex items-baseline gap-2 flex-wrap" aria-label="سعر المنتج">
+        <span class="font-black text-brand-700 text-xl">${money(getProductPrice(prod))} ج.م</span>
+        ${discountRate(prod) ? `<del class="text-slate-400 text-sm">${money(prod.price)} ج.م</del>` : ''}
+      </div>`;
     }
 
     function renderProductsCatalog() {
@@ -999,12 +1078,10 @@
         const isFav = appState.favorites.includes(prod.id);
         const prodCat = prod.category || 'عام';
         html += `
-          <div class="bg-white rounded-3xl border border-slate-100 shadow-sm hover:shadow-xl transition overflow-hidden flex flex-col relative group">
+          <div class="product-card bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col relative group">
             <div class="relative h-52 bg-slate-100 overflow-hidden">
               <img src="${prod.image}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" onerror="this.src='https://placehold.co/400x300/e2e8f0/64748b?text=Clovs'">
-              <span class="absolute top-3 right-3 bg-white/95 backdrop-blur-md text-slate-900 font-extrabold text-xs px-3.5 py-1.5 rounded-full shadow">
-                السعر: ${prod.price} ج.م
-              </span>
+              ${discountBadge(prod)}
               <button onclick="event.stopPropagation(); toggleFavorite('${prod.id}')" class="absolute top-3 left-3 w-9 h-9 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center shadow hover:scale-110 transition ${isFav ? 'text-rose-500' : 'text-slate-400 hover:text-rose-500'}">
                 <i class="fa-${isFav ? 'solid' : 'regular'} fa-heart text-base"></i>
               </button>
@@ -1017,6 +1094,7 @@
                 </div>
                 <h3 class="font-black text-slate-900 text-xl">${prod.name}</h3>
                 <p class="text-slate-500 text-xs line-clamp-2 leading-relaxed">${prod.desc}</p>
+                ${productPriceHtml(prod)}
               </div>
               <button onclick="switchView('product-details', '${prod.id}')" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-2xl shadow-lg shadow-brand-600/20 transition text-sm flex items-center justify-center gap-2">
                 <i class="fa-solid fa-hand-holding-dollar"></i> تحديد العمولة والإضافة للسلة
@@ -1056,12 +1134,10 @@
       let html = '';
       favProducts.forEach(prod => {
         html += `
-          <div class="bg-white rounded-3xl border border-slate-100 shadow-sm hover:shadow-xl transition overflow-hidden flex flex-col relative group">
+          <div class="product-card bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col relative group">
             <div class="relative h-52 bg-slate-100 overflow-hidden">
               <img src="${prod.image}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" onerror="this.src='https://placehold.co/400x300/e2e8f0/64748b?text=Clovs'">
-              <span class="absolute top-3 right-3 bg-white/90 backdrop-blur-md text-slate-900 font-extrabold text-xs px-3.5 py-1.5 rounded-full shadow">
-                السعر: ${prod.price} ج.م
-              </span>
+              ${discountBadge(prod)}
               <button onclick="event.stopPropagation(); toggleFavorite('${prod.id}')" class="absolute top-3 left-3 w-9 h-9 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center shadow text-rose-500 hover:scale-110 transition">
                 <i class="fa-solid fa-heart text-base"></i>
               </button>
@@ -1070,6 +1146,7 @@
               <div class="space-y-2">
                 <h3 class="font-black text-slate-900 text-xl">${prod.name}</h3>
                 <p class="text-slate-500 text-xs line-clamp-2 leading-relaxed">${prod.desc}</p>
+                ${productPriceHtml(prod)}
               </div>
               <button onclick="switchView('product-details', '${prod.id}')" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-2xl shadow-lg shadow-brand-600/20 transition text-sm flex items-center justify-center gap-2">
                 <i class="fa-solid fa-hand-holding-dollar"></i> تحديد العمولة والإضافة للسلة
@@ -1137,7 +1214,7 @@
               <div class="bg-slate-50 p-5 rounded-2xl border border-slate-200/80 space-y-3">
                 <div class="flex justify-between items-center text-sm">
                   <span class="font-bold text-slate-600">سعر المنتج المعلن:</span>
-                  <span class="font-black text-slate-900 text-lg">${prod.price} ج.م</span>
+                  <span class="font-black text-slate-900 text-lg">${money(getProductPrice(prod))} ج.م ${discountRate(prod) ? `<del class="text-slate-400 text-sm font-normal mr-2">${money(prod.price)} ج.م</del>` : ''}</span>
                 </div>
                 <div class="flex justify-between items-center text-sm">
                   <span class="font-bold text-slate-600">المخزون المتاح:</span>
@@ -1230,7 +1307,7 @@
 
       let itemsHtml = '';
       items.forEach((item, index) => {
-        const itemSellingPrice = (item.product.price + item.commission) * item.quantity;
+        const itemSellingPrice = (getProductPrice(item.product) + item.commission) * item.quantity;
         subtotal += itemSellingPrice;
         totalExpectedComm += item.commission * item.quantity;
 
@@ -1240,8 +1317,8 @@
               <img src="${item.product.image}" class="w-16 h-16 rounded-xl object-cover" onerror="this.src='https://placehold.co/100x100/e2e8f0/64748b?text=Clovs'">
               <div>
                 <h4 class="font-bold text-slate-900 text-sm">${item.product.name}</h4>
-                <div class="text-xs text-slate-500 mt-0.5">سعر المنتج: ${item.product.price} ج.م | عمولتك: <span class="font-bold text-brand-600">${item.commission} ج.م</span></div>
-                <div class="text-xs font-bold text-slate-700 mt-1">سعر البيع للعميل: ${item.product.price + item.commission} ج.م</div>
+                <div class="text-xs text-slate-500 mt-0.5">سعر المنتج: ${money(getProductPrice(item.product))} ج.م | عمولتك: <span class="font-bold text-brand-600">${item.commission} ج.م</span></div>
+                <div class="text-xs font-bold text-slate-700 mt-1">سعر البيع للعميل: ${money(getProductPrice(item.product) + item.commission)} ج.م</div>
               </div>
             </div>
             <div class="flex items-center gap-3">
@@ -1431,7 +1508,7 @@
       let subtotal = 0;
       let totalCommission = 0;
       appState.activeCart.items.forEach(i => {
-        subtotal += (i.product.price + i.commission) * i.quantity;
+        subtotal += (getProductPrice(i.product) + i.commission) * i.quantity;
         totalCommission += i.commission * i.quantity;
       });
 
@@ -1787,7 +1864,7 @@
                 <span class="font-bold text-slate-900">${p.name}</span>
               </td>
               <td class="py-3 px-4 font-bold text-brand-700 text-xs"><span class="bg-brand-50 px-2 py-1 rounded-md">${p.category || 'عام'}</span></td>
-              <td class="py-3 px-4 font-black text-brand-600">${p.price} ج.م</td>
+              <td class="py-3 px-4 font-black text-brand-600">${money(getProductPrice(p))} ج.م ${discountRate(p) ? `<span class="text-rose-600 text-xs">(${discountRate(p)}٪ خصم)</span>` : ''}</td>
               <td class="py-3 px-4 font-bold text-slate-700">${p.stock || 10} قطعة</td>
               <td class="py-3 px-4 text-xs text-slate-500 max-w-xs truncate">${p.desc}</td>
               <td class="py-3 px-4 flex gap-2">
@@ -1912,6 +1989,7 @@
       const title = isEdit ? 'تعديل بيانات المنتج' : 'إضافة منتج جديد للكتالوج';
       const nameVal = isEdit ? prod.name : '';
       const priceVal = isEdit ? prod.price : '';
+      const discountVal = isEdit ? (prod.discountPercent || 0) : 0;
       const stockVal = isEdit ? (prod.stock || 10) : 10;
       const descVal = isEdit ? prod.desc : '';
       const imgVal = isEdit ? prod.image : '';
@@ -1938,12 +2016,17 @@
           <div class="grid grid-cols-2 gap-3">
             <div>
               <label class="block text-xs font-bold text-slate-700 mb-1">السعر الأساسي (ج.م)</label>
-              <input type="number" id="pm-price" value="${priceVal}" placeholder="مثال: 250" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm">
+              <input type="number" id="pm-price" min="0.01" step="0.01" value="${priceVal}" placeholder="مثال: 250" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm">
             </div>
             <div>
               <label class="block text-xs font-bold text-slate-700 mb-1">المخزون المتاح (قطعة)</label>
               <input type="number" id="pm-stock" value="${stockVal}" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm">
             </div>
+          </div>
+          <div class="rounded-xl bg-rose-50 border border-rose-100 p-3">
+            <label class="block text-xs font-bold text-slate-700 mb-1">نسبة الخصم / العرض (٪)</label>
+            <input type="number" id="pm-discount" min="0" max="99" step="1" value="${discountVal}" placeholder="0 بدون خصم" class="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm">
+            <p class="text-xs text-slate-500 mt-2">أدخل 0 لإلغاء العرض. السعر بعد الخصم يظهر أسفل المنتج ويُستخدم لحساب طلب العميل.</p>
           </div>
           <div>
             <label class="block text-xs font-bold text-slate-700 mb-1">وصف المنتج</label>
@@ -1973,13 +2056,14 @@
       const name = document.getElementById('pm-name').value.trim();
       const category = document.getElementById('pm-category')?.value || 'عام';
       const price = parseFloat(document.getElementById('pm-price').value);
+      const discountPercent = Number(document.getElementById('pm-discount').value);
       const stock = parseInt(document.getElementById('pm-stock').value) || 10;
       const desc = document.getElementById('pm-desc').value.trim();
       const imgUrl = document.getElementById('pm-img-url').value.trim();
       const finalImg = tempUploadedProductImage || imgUrl || 'https://placehold.co/500x500/059669/ffffff?text=Clovs';
 
-      if (!name || isNaN(price)) {
-        showToast('يرجى ملء اسم المنتج وسعره الأساسي بشكل صحيح', 'error');
+      if (!name || !Number.isFinite(price) || price <= 0 || !Number.isInteger(discountPercent) || discountPercent < 0 || discountPercent >= 100) {
+        showToast('اكتب اسم المنتج وسعرًا أكبر من صفر، وخصمًا بين 0 و99٪', 'error');
         return;
       }
 
@@ -1995,6 +2079,7 @@
           name,
           category,
           price,
+          discountPercent,
           stock,
           desc,
           image: finalImg,
@@ -2375,6 +2460,25 @@
           <div class="space-y-3">${slidesHtml}</div>
         </div>
 
+        <div class="bg-white p-6 rounded-3xl border border-slate-100 space-y-4">
+          <div class="border-b border-slate-100 pb-3">
+            <h3 class="font-black text-slate-900 text-lg">حسابات السوشيال الرسمية</h3>
+            <p class="text-xs text-slate-500 mt-1">الروابط المحفوظة تظهر في صفحة «تابعنا» لجميع الزوار. اترك الخانة فارغة لحين تجهيز الحساب.</p>
+          </div>
+          <div class="grid sm:grid-cols-3 gap-4">
+            <label class="block text-xs font-bold text-slate-700">فيسبوك
+              <input type="url" id="social-facebook" value="${escapeHtml(appState.socialLinks.facebook)}" placeholder="https://www.facebook.com/..." class="mt-2 w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm" dir="ltr">
+            </label>
+            <label class="block text-xs font-bold text-slate-700">إنستجرام
+              <input type="url" id="social-instagram" value="${escapeHtml(appState.socialLinks.instagram)}" placeholder="https://www.instagram.com/..." class="mt-2 w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm" dir="ltr">
+            </label>
+            <label class="block text-xs font-bold text-slate-700">تيك توك
+              <input type="url" id="social-tiktok" value="${escapeHtml(appState.socialLinks.tiktok)}" placeholder="https://www.tiktok.com/@..." class="mt-2 w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm" dir="ltr">
+            </label>
+          </div>
+          <button onclick="saveSocialLinks()" class="bg-brand-600 hover:bg-brand-700 text-white font-bold px-6 py-3 rounded-xl text-sm">حفظ روابط الحسابات</button>
+        </div>
+
         <!-- Comprehensive User Accounts and Balance Management -->
         <div class="bg-white p-6 rounded-3xl border border-slate-100 space-y-4">
           <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2 border-b border-slate-100 pb-3">
@@ -2492,7 +2596,7 @@
       document.getElementById('modal-message').innerHTML = html;
     }
 
-    function saveNewSlide() {
+    async function saveNewSlide() {
       const title = document.getElementById('slide-title-input')?.value.trim();
       const desc = document.getElementById('slide-desc-input')?.value.trim();
       const tag = document.getElementById('slide-tag-input')?.value.trim() || 'إعلان';
@@ -2504,33 +2608,90 @@
         return;
       }
 
-      appState.slides.push({
+      const nextSlides = [...appState.slides, {
         id: 'SLD-' + Date.now(),
         title,
         desc,
         tag,
         image: finalImg
-      });
+      }];
 
-      tempSlideImage = '';
-      closeModal();
-      showToast('تمت إضافة شريحة السلايدر بنجاح');
-      renderSlider();
-      renderSuperCustomizerView();
+      const button = document.querySelector('#modal-actions button[onclick="saveNewSlide()"]');
+      if (button) { button.disabled = true; button.innerText = 'جاري الحفظ...'; }
+      try {
+        await slidesRef.set(nextSlides);
+        tempSlideImage = '';
+        closeModal();
+        showToast('تم حفظ شريحة السلايدر في قاعدة البيانات');
+      } catch (error) {
+        console.error('[Clovs Firebase] save slide failed:', error);
+        showToast('فشل حفظ السلايدر. راجع صلاحيات قاعدة البيانات أو حجم الصورة.', 'error');
+        if (button) { button.disabled = false; button.innerText = 'إضافة الشريحة'; }
+      }
     }
 
-    function deleteSlide(idx) {
+    async function deleteSlide(idx) {
       if (appState.slides.length <= 1) {
         showToast('يجب أن تحتوي المنصة على شريحة واحدة على الأقل', 'error');
         return;
       }
-      appState.slides.splice(idx, 1);
-      if (appState.currentSlideIdx >= appState.slides.length) {
-        appState.currentSlideIdx = 0;
+      try {
+        await slidesRef.set(appState.slides.filter((_, index) => index !== idx));
+        showToast('تم حذف الشريحة وحفظ التغيير');
+      } catch (error) {
+        console.error('[Clovs Firebase] delete slide failed:', error);
+        showToast('فشل حذف الشريحة من قاعدة البيانات', 'error');
       }
-      showToast('تم حذف الشريحة بنجاح');
-      renderSlider();
-      renderSuperCustomizerView();
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+    }
+
+    const SOCIAL_PROFILES = [
+      { key: 'facebook', name: 'فيسبوك', icon: 'fa-facebook-f', color: 'bg-blue-600', host: /(^|\.)facebook\.com$/i },
+      { key: 'instagram', name: 'إنستجرام', icon: 'fa-instagram', color: 'bg-pink-600', host: /(^|\.)instagram\.com$/i },
+      { key: 'tiktok', name: 'تيك توك', icon: 'fa-tiktok', color: 'bg-slate-900', host: /(^|\.)tiktok\.com$/i }
+    ];
+
+    function validSocialUrl(value, profile) {
+      if (!value) return '';
+      try {
+        const parsed = new URL(value);
+        return parsed.protocol === 'https:' && profile.host.test(parsed.hostname) ? parsed.href : '';
+      } catch (_) { return ''; }
+    }
+
+    async function saveSocialLinks() {
+      const links = {};
+      for (const profile of SOCIAL_PROFILES) {
+        const value = document.getElementById(`social-${profile.key}`).value.trim();
+        if (value && !validSocialUrl(value, profile)) {
+          showToast(`أدخل رابط https صحيحًا لحساب ${profile.name}`, 'error');
+          return;
+        }
+        links[profile.key] = value;
+      }
+      try {
+        await socialLinksRef.set(links);
+        showToast('تم حفظ حسابات السوشيال في قاعدة البيانات');
+      } catch (error) {
+        console.error('[Clovs Firebase] save social links failed:', error);
+        showToast('فشل حفظ الروابط. راجع صلاحيات قاعدة البيانات.', 'error');
+      }
+    }
+
+    function renderSocialView() {
+      const grid = document.getElementById('social-links-grid');
+      grid.innerHTML = SOCIAL_PROFILES.map(profile => {
+        const url = validSocialUrl(appState.socialLinks[profile.key], profile);
+        return `<article class="social-card bg-white rounded-3xl p-7 border border-slate-100 shadow-sm flex flex-col items-start min-h-60">
+          <div class="w-14 h-14 rounded-2xl ${profile.color} text-white flex items-center justify-center text-2xl shadow-lg mb-6"><i class="fa-brands ${profile.icon}"></i></div>
+          <h3 class="text-xl font-black text-slate-900 mb-1">${profile.name}</h3>
+          <p class="text-slate-500 text-sm mb-6">تابع حسابنا الرسمي على ${profile.name}.</p>
+          ${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="mt-auto inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white font-bold text-sm px-5 py-3 rounded-xl">زيارة الحساب <i class="fa-solid fa-arrow-up-left-from-square"></i></a>` : `<span class="mt-auto text-slate-500 bg-slate-100 text-xs font-bold px-4 py-2 rounded-xl">الرابط سيُضاف قريبًا</span>`}
+        </article>`;
+      }).join('');
     }
 
     function exportSiteBackupJSON() {
@@ -2545,6 +2706,7 @@
           withdrawRequests: appState.withdrawRequests,
           registrationRequests: appState.registrationRequests,
           slides: appState.slides,
+          socialLinks: appState.socialLinks,
           shippingRates: appState.shippingRates,
           contactInfo: appState.contactInfo,
           siteTheme: appState.siteTheme
@@ -2571,7 +2733,7 @@
       if (!file) return;
 
       const reader = new FileReader();
-      reader.onload = function(e) {
+      reader.onload = async function(e) {
         try {
           const data = JSON.parse(e.target.result);
           if (!data || typeof data !== 'object') {
@@ -2584,7 +2746,18 @@
           if (Array.isArray(data.orders)) appState.orders = data.orders;
           if (Array.isArray(data.withdrawRequests)) appState.withdrawRequests = data.withdrawRequests;
           if (Array.isArray(data.registrationRequests)) appState.registrationRequests = data.registrationRequests;
-          if (Array.isArray(data.slides)) appState.slides = data.slides;
+          if (Array.isArray(data.slides) && data.slides.length) {
+            await slidesRef.set(data.slides);
+          }
+          if (data.socialLinks && typeof data.socialLinks === 'object') {
+            const links = {};
+            for (const profile of SOCIAL_PROFILES) {
+              const value = String(data.socialLinks[profile.key] || '');
+              if (value && !validSocialUrl(value, profile)) throw new Error('Invalid social link');
+              links[profile.key] = value;
+            }
+            await socialLinksRef.set(links);
+          }
           if (data.shippingRates && typeof data.shippingRates === 'object') appState.shippingRates = data.shippingRates;
           if (data.contactInfo && typeof data.contactInfo === 'object') appState.contactInfo = data.contactInfo;
           if (data.siteTheme && typeof data.siteTheme === 'object') {
@@ -2602,9 +2775,10 @@
           updateFavBadge();
           updateCartBadge();
           renderSuperCustomizerView();
-          showToast('تمت استعادة كافة بيانات المنصة بنجاح!');
+          showToast('تمت استعادة البيانات وحفظ السلايدر وروابط السوشيال');
         } catch (err) {
-          showToast('الملف المرفوع غير صالح أو تالف', 'error');
+          console.error('[Clovs] backup restore failed:', err);
+          showToast('تعذر استعادة النسخة بالكامل. تحقق من الملف وصلاحيات قاعدة البيانات.', 'error');
         }
       };
       reader.readAsText(file);
@@ -2891,6 +3065,7 @@
       updateCartBadge();
       switchView('home');
       startFirebaseProductsSync();
+      startFirebaseSiteSettingsSync();
     };
  
 
