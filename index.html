@@ -112,6 +112,9 @@
 
     <div id="sidebar-footer" class="p-4 border-t border-slate-100 bg-slate-50">
       <div id="sidebar-auth-area"></div>
+      <button onclick="switchView('staff-login')" class="w-full mt-3 pt-3 border-t border-slate-200 text-center text-xs font-bold text-slate-500 hover:text-brand-600 transition">
+        دخول فريق الإدارة ومضيفي المنتجات
+      </button>
     </div>
   </aside>
 
@@ -324,16 +327,7 @@
           <p class="text-slate-500 text-sm">سجل دخولك أو أنشئ حساباً جديداً للوصول لخدمات المنصة</p>
         </div>
 
-        <div class="rounded-2xl border-2 border-brand-100 bg-brand-50/60 p-5 space-y-3 shadow-sm">
-          <div class="flex items-center gap-2 text-lg font-black text-slate-900"><i class="fa-solid fa-shield-halved text-brand-600"></i> دخول المدير عبر Firebase</div>
-          <p class="text-xs text-slate-500">استخدم طريقة الدخول المرتبطة بحسابك في Firebase Authentication.</p>
-          <form id="form-firebase-admin" onsubmit="handleFirebaseAdminLogin(event)" class="space-y-3">
-            <input type="email" id="firebase-admin-email" required autocomplete="username" placeholder="البريد الإلكتروني" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm" dir="ltr">
-            <input type="password" id="firebase-admin-password" required autocomplete="current-password" placeholder="كلمة مرور Firebase" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm" dir="ltr">
-            <button type="submit" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-xl text-sm">دخول المدير الآمن</button>
-          </form>
-          <button type="button" onclick="handleFirebaseGoogleAdminLogin()" class="w-full bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 font-bold py-3 rounded-xl text-sm"><i class="fa-brands fa-google ml-2"></i> الدخول بحساب Google المرتبط بـFirebase</button>
-        </div>
+
 
         <div class="flex bg-slate-100 p-1.5 rounded-2xl">
           <button id="tab-login-btn" onclick="switchAuthTab('login')" class="flex-1 py-2.5 rounded-xl font-bold text-sm bg-white text-brand-600 shadow-sm transition">تسجيل الدخول</button>
@@ -341,10 +335,9 @@
         </div>
 
         <form id="form-login" onsubmit="handleLogin(event)" class="space-y-4">
-          <p class="text-xs text-slate-500 bg-brand-50 border border-brand-100 rounded-xl p-3">للمسوقين: ادخل باسم المستخدم المعتاد. المدير يستخدم قسم Firebase الواضح بالأعلى.</p>
           <div>
-            <label class="block text-xs font-bold text-slate-700 mb-1.5">اسم المستخدم أو بريد المدير في Firebase</label>
-            <input type="text" id="login-username" required autocomplete="username" placeholder="اسم المستخدم للمسوق أو بريد المدير..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-500 transition">
+            <label class="block text-xs font-bold text-slate-700 mb-1.5">اسم المستخدم</label>
+            <input type="text" id="login-username" required autocomplete="username" placeholder="اسم المستخدم..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-500 transition">
           </div>
           <div>
             <label class="block text-xs font-bold text-slate-700 mb-1.5">كلمة المرور</label>
@@ -378,14 +371,31 @@
             <label class="block text-xs font-bold text-slate-700 mb-1.5">نوع الحساب (الدور)</label>
             <select id="reg-role" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-500 transition">
               <option value="marketer">مسوق (Marketer - تفعيل فوري)</option>
-              <option value="product_manager">مضيف منتجات (Product Manager - يتطلب موافقة الإدارة)</option>
-              <option value="admin">مدير (Admin - يتطلب موافقة الإدارة)</option>
             </select>
           </div>
           <button type="submit" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-brand-600/20 transition text-sm">
             إنشاء الحساب الآن
           </button>
         </form>
+      </div>
+    </div>
+
+    <!-- Staff sign-in is deliberately separate from the marketer entry page. -->
+    <div id="view-staff-login" class="app-view max-w-md mx-auto hidden fade-in">
+      <div class="bg-white p-8 rounded-3xl shadow-xl border border-slate-100 space-y-6">
+        <div class="text-center space-y-2">
+          <div class="w-16 h-16 rounded-2xl bg-slate-900 text-white flex items-center justify-center text-2xl mx-auto"><i class="fa-solid fa-shield-halved"></i></div>
+          <h2 class="text-2xl font-black text-slate-900">دخول فريق الإدارة</h2>
+          <p class="text-slate-500 text-sm">للمدير الأساسي والمديرين ومضيفي المنتجات المسجلين في Firebase.</p>
+        </div>
+        <form id="form-staff-login" onsubmit="handleStaffLogin(event)" class="space-y-4">
+          <div><label class="block text-xs font-bold mb-1.5">البريد الإلكتروني</label><input type="email" id="staff-email" required autocomplete="username" placeholder="email@example.com" dir="ltr" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm"></div>
+          <div><label class="block text-xs font-bold mb-1.5">كلمة مرور Firebase</label><input type="password" id="staff-password" required autocomplete="current-password" placeholder="••••••••" dir="ltr" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm"></div>
+          <button type="submit" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-black py-3 rounded-xl text-sm">دخول الفريق</button>
+        </form>
+        <div class="flex items-center gap-3 text-slate-400 text-xs"><span class="h-px bg-slate-200 flex-1"></span>أو<span class="h-px bg-slate-200 flex-1"></span></div>
+        <button type="button" onclick="handleStaffGoogleLogin()" class="w-full bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 font-bold py-3 rounded-xl text-sm"><i class="fa-brands fa-google ml-2"></i> الدخول بحساب Google المرتبط بـFirebase</button>
+        <p class="text-xs text-slate-500 leading-relaxed">يجب أن يكون حسابك مضافًا بصلاحية مدير أو مضيف منتجات. تواصل مع المدير الأساسي إذا لم تُفعّل صلاحيتك.</p>
       </div>
     </div>
 
@@ -519,6 +529,7 @@
         hours: 'متاحون طوال أيام الأسبوع من 10 صباحاً حتى 10 مساءً'
       },
       socialLinks: { facebook: '', instagram: '', tiktok: '' },
+      staffRoles: {},
       activeCart: {
         items: [],
         customer: { name: '', phone: '', address: '', governorate: 'القاهرة' },
@@ -556,37 +567,93 @@
     const productsRef = firebaseDB.ref('products');
     const slidesRef = firebaseDB.ref('siteSettings/slides');
     const socialLinksRef = firebaseDB.ref('siteSettings/socialLinks');
+    const staffRolesRef = firebaseDB.ref('staffRoles');
     let firebaseProductsListenerStarted = false;
+    let staffRolesListenerStarted = false;
+    let currentStaffRoleRef = null;
 
-    function setFirebaseAdminSession(authUser) {
-      if (!authUser || authUser.uid !== FIREBASE_ADMIN_UID) return false;
-      let admin = appState.usersList.find(u => u.id === `firebase-${FIREBASE_ADMIN_UID}`);
-      if (!admin) {
-        admin = {
-          id: `firebase-${FIREBASE_ADMIN_UID}`, name: 'المدير الأساسي',
-          username: authUser.email || 'Firebase Admin', password: '',
-          role: 'super_admin', status: 'approved', balance: 0, firebaseAdmin: true
+    function setFirebaseStaffSession(authUser, role) {
+      if (!authUser || !['super_admin', 'admin', 'product_manager'].includes(role)) return false;
+      const id = `firebase-${authUser.uid}`;
+      let staff = appState.usersList.find(u => u.id === id);
+      if (!staff) {
+        staff = {
+          id, name: role === 'super_admin' ? 'المدير الأساسي' : (authUser.displayName || authUser.email || 'عضو الفريق'),
+          username: authUser.email || id, password: '',
+          role, status: 'approved', balance: 0, firebaseStaff: true
         };
-        appState.usersList.unshift(admin);
+        appState.usersList.unshift(staff);
       }
-      appState.currentUser = admin;
+      staff.role = role;
+      appState.currentUser = staff;
       updateHeaderAuthUI();
       updateSidebarContent();
       return true;
     }
 
+    async function getFirebaseStaffRole(authUser) {
+      if (authUser.uid === FIREBASE_ADMIN_UID) return 'super_admin';
+      const snapshot = await staffRolesRef.child(authUser.uid).once('value');
+      const role = snapshot.val();
+      return role === 'admin' || role === 'product_manager' ? role : null;
+    }
+
+    function startStaffRolesSync() {
+      if (staffRolesListenerStarted) return;
+      staffRolesListenerStarted = true;
+      staffRolesRef.on('value', snapshot => {
+        appState.staffRoles = snapshot.val() || {};
+        if (appState.currentView === 'super-customizer') renderSuperCustomizerView();
+      }, error => console.error('[Clovs Firebase] staff roles read failed:', error));
+    }
+
+    function watchCurrentStaffRole(authUser) {
+      if (currentStaffRoleRef) currentStaffRoleRef.off('value');
+      currentStaffRoleRef = staffRolesRef.child(authUser.uid);
+      currentStaffRoleRef.on('value', async snapshot => {
+        const role = snapshot.val();
+        if (role !== 'admin' && role !== 'product_manager') {
+          await firebaseAuth.signOut();
+          showToast('تم إلغاء صلاحية حساب الفريق', 'error');
+          return;
+        }
+        if (firebaseAuth.currentUser?.uid === authUser.uid && appState.currentUser?.role !== role) {
+          setFirebaseStaffSession(authUser, role);
+          if (['admin-dashboard', 'product-manager'].includes(appState.currentView)) switchView(role === 'admin' ? 'admin-dashboard' : 'product-manager');
+        }
+      }, error => console.error('[Clovs Firebase] current staff role read failed:', error));
+    }
+
     firebaseAuth.onAuthStateChanged(async (authUser) => {
-      if (authUser && authUser.uid !== FIREBASE_ADMIN_UID) {
-        await firebaseAuth.signOut();
-        showToast('حساب Firebase ده غير مصرح له بإدارة الموقع', 'error');
-        return;
-      }
-      if (authUser) setFirebaseAdminSession(authUser);
-      else if (appState.currentUser?.firebaseAdmin) {
+      if (authUser) {
+        try {
+          const role = await getFirebaseStaffRole(authUser);
+          if (!role) {
+            await firebaseAuth.signOut();
+            showToast('حساب Firebase ده ليس له صلاحية في فريق الموقع', 'error');
+            return;
+          }
+          setFirebaseStaffSession(authUser, role);
+          if (role === 'super_admin') startStaffRolesSync();
+          else watchCurrentStaffRole(authUser);
+        } catch (error) {
+          console.error('[Clovs Firebase] staff role lookup failed:', error);
+          showToast('تعذر التحقق من صلاحية حساب الفريق. راجع قواعد Firebase.', 'error');
+        }
+      } else if (appState.currentUser?.firebaseStaff) {
         appState.currentUser = null;
         updateHeaderAuthUI();
         updateSidebarContent();
-        if (appState.currentView === 'super-customizer' || appState.currentView === 'admin-dashboard') switchView('home');
+        if (['super-customizer', 'admin-dashboard', 'product-manager'].includes(appState.currentView)) switchView('home');
+      }
+      if (!authUser && staffRolesListenerStarted) {
+        staffRolesRef.off('value');
+        staffRolesListenerStarted = false;
+        appState.staffRoles = {};
+      }
+      if (!authUser && currentStaffRoleRef) {
+        currentStaffRoleRef.off('value');
+        currentStaffRoleRef = null;
       }
     });
 
@@ -880,6 +947,7 @@
       else if (viewName === 'shipping-rates') renderShippingRatesView();
       else if (viewName === 'contact-support') renderContactSupportView();
       else if (viewName === 'social') renderSocialView();
+      // The staff login page has static content.
     }
 
     function updateSidebarContent() {
@@ -1611,81 +1679,64 @@
       const u = document.getElementById('login-username').value.trim();
       const password = document.getElementById('login-password').value;
 
-      const user = appState.usersList.find(x => x.username === u && x.password === password.trim());
+      const user = appState.usersList.find(x => x.username === u && x.password === password.trim() && x.role === 'marketer');
       if (!user) {
-        if (u.includes('@') && u.includes('.')) {
-          try {
-            await signInFirebaseAdminWithEmail(u, password);
-            document.getElementById('login-password').value = '';
-          } catch (error) {
-            console.error('[Clovs Firebase] admin sign in failed:', error);
-            showToast(error.message === 'unauthorized-admin' ? 'البريد ده مش تابع لحساب مدير Firebase المصرح له' : 'دخول Firebase فشل. تأكد من البريد وكلمة المرور وطريقة تسجيل الحساب.', 'error');
-          }
-          return;
-        }
-        showToast('بيانات المسوق غير صحيحة. لو أنت المدير، ادخل ببريد Firebase أو زر Google.', 'error');
+        showToast('بيانات المسوق غير صحيحة. فريق الإدارة يستخدم رابط الدخول آخر القائمة.', 'error');
         return;
       }
       if (user.status !== 'approved') {
         showToast('حسابك قيد مراجعة وتفعيل الإدارة حالياً', 'error');
         return;
       }
-      if (user.role === 'super_admin') {
-        showToast('دخول المدير متاح فقط عبر Firebase Authentication في الأسفل', 'error');
-        return;
-      }
-
       appState.currentUser = user;
       updateHeaderAuthUI();
       showToast(`مرحباً بك مجدداً يا ${user.name}!`);
       switchView('home');
     }
 
-    async function handleFirebaseAdminLogin(e) {
+    async function handleStaffLogin(e) {
       e.preventDefault();
-      const email = document.getElementById('firebase-admin-email').value.trim();
-      const password = document.getElementById('firebase-admin-password').value;
+      const email = document.getElementById('staff-email').value.trim();
+      const password = document.getElementById('staff-password').value;
       const button = e.target.querySelector('button[type="submit"]');
       button.disabled = true;
       button.innerText = 'جاري التحقق...';
       try {
-        await signInFirebaseAdminWithEmail(email, password);
-        document.getElementById('firebase-admin-password').value = '';
+        const credential = await firebaseAuth.signInWithEmailAndPassword(email, password);
+        await finishStaffLogin(credential.user);
+        document.getElementById('staff-password').value = '';
       } catch (error) {
-        console.error('[Clovs Firebase] admin sign in failed:', error);
-        const msg = error.message === 'unauthorized-admin'
-          ? 'حساب Firebase ده لا يطابق UID المدير المصرح له'
-          : 'تعذر دخول المدير. تحقق من البريد وكلمة المرور وتفعيل Email/Password في Firebase Authentication.';
+        console.error('[Clovs Firebase] staff sign in failed:', error);
+        const msg = error.message === 'unauthorized-staff'
+          ? 'الحساب ليس له صلاحية مدير أو مضيف منتجات. راجع المدير الأساسي.'
+          : 'تعذر دخول الفريق. تأكد من البريد وكلمة المرور وتفعيل طريقة الدخول في Firebase.';
         showToast(msg, 'error');
       } finally {
         button.disabled = false;
-        button.innerText = 'دخول المدير الآمن';
+        button.innerText = 'دخول الفريق';
       }
     }
 
-    async function signInFirebaseAdminWithEmail(email, password) {
-      const credential = await firebaseAuth.signInWithEmailAndPassword(email, password);
-      await finishFirebaseAdminLogin(credential.user);
-    }
-
-    async function handleFirebaseGoogleAdminLogin() {
+    async function handleStaffGoogleLogin() {
       try {
         const credential = await firebaseAuth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
-        await finishFirebaseAdminLogin(credential.user);
+        await finishStaffLogin(credential.user);
       } catch (error) {
         if (error.code === 'auth/popup-closed-by-user') return;
-        console.error('[Clovs Firebase] Google admin sign in failed:', error);
-        showToast(error.message === 'unauthorized-admin' ? 'حساب Google ده لا يطابق UID المدير' : 'تعذر دخول Google. فعّل Google في Firebase وأضف نطاق موقعك للنطاقات المسموحة.', 'error');
+        console.error('[Clovs Firebase] Google staff sign in failed:', error);
+        showToast(error.message === 'unauthorized-staff' ? 'حساب Google ليس له صلاحية في فريق الموقع' : 'تعذر دخول Google. فعّل Google في Firebase وأضف نطاق موقعك للنطاقات المسموحة.', 'error');
       }
     }
 
-    async function finishFirebaseAdminLogin(authUser) {
-      if (!setFirebaseAdminSession(authUser)) {
+    async function finishStaffLogin(authUser) {
+      const role = await getFirebaseStaffRole(authUser);
+      if (!role || !setFirebaseStaffSession(authUser, role)) {
         await firebaseAuth.signOut();
-        throw new Error('unauthorized-admin');
+        throw new Error('unauthorized-staff');
       }
-      showToast('تم تسجيل دخول المدير عبر Firebase');
-      switchView('super-customizer');
+      if (role === 'super_admin') startStaffRolesSync();
+      showToast('تم تسجيل دخول فريق الموقع عبر Firebase');
+      switchView(role === 'super_admin' ? 'super-customizer' : role === 'admin' ? 'admin-dashboard' : 'product-manager');
     }
 
     function handleRegister(e) {
@@ -2460,6 +2511,14 @@
         `;
       });
 
+      const staffRows = Object.entries(appState.staffRoles || {})
+        .filter(([uid, role]) => /^[A-Za-z0-9_-]{1,128}$/.test(uid) && ['admin', 'product_manager'].includes(role))
+        .map(([uid, role]) => `<div class="flex flex-wrap items-center justify-between gap-2 border border-slate-100 rounded-xl p-3 text-xs">
+          <span dir="ltr" class="font-mono text-slate-700 break-all">${uid}</span>
+          <span class="font-bold text-brand-700">${role === 'admin' ? 'مدير' : 'مضيف منتجات'}</span>
+          <button onclick="revokeStaffRole('${uid}')" class="font-bold text-rose-600 hover:text-rose-700">إلغاء الصلاحية</button>
+        </div>`).join('');
+
       let uRows = '';
       appState.usersList.forEach(u => {
         let roleBadgeColor = 'bg-slate-100 text-slate-700';
@@ -2482,12 +2541,12 @@
             <td class="py-3 px-3 text-slate-600 font-mono">${u.phone || 'غير مسجل'}</td>
             <td class="py-3 px-3"><span class="px-2.5 py-1 rounded-full text-[11px] font-black ${roleBadgeColor}">${roleName}</span></td>
             <td class="py-3 px-3">${balanceDisplay}</td>
-            <td class="py-3 px-3 font-mono font-bold text-slate-800 bg-slate-50 px-2 rounded-lg">${u.firebaseAdmin ? 'Firebase Auth' : u.password}</td>
+            <td class="py-3 px-3 font-mono font-bold text-slate-800 bg-slate-50 px-2 rounded-lg">${u.firebaseStaff ? 'Firebase Auth' : u.password}</td>
             <td class="py-3 px-3 flex items-center gap-2">
               <button onclick="editUserModal('${u.id}')" class="bg-brand-50 hover:bg-brand-600 text-brand-700 hover:text-white font-bold px-3 py-1.5 rounded-xl transition text-xs flex items-center gap-1">
                 <i class="fa-solid fa-user-pen"></i> تحكم وتعديل
               </button>
-              ${!isSuper ? `
+              ${!isSuper && !u.firebaseStaff ? `
                 <button onclick="deleteUser('${u.id}')" class="bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white font-bold px-2.5 py-1.5 rounded-xl transition text-xs" title="حذف الحساب">
                   <i class="fa-solid fa-trash-can"></i>
                 </button>
@@ -2595,6 +2654,19 @@
           <button onclick="saveSocialLinks()" class="bg-brand-600 hover:bg-brand-700 text-white font-bold px-6 py-3 rounded-xl text-sm">حفظ روابط الحسابات</button>
         </div>
 
+        <div class="bg-white p-6 rounded-3xl border border-slate-100 space-y-4">
+          <div class="border-b border-slate-100 pb-3">
+            <h3 class="font-black text-slate-900 text-lg">صلاحيات فريق الإدارة والمنتجات</h3>
+            <p class="text-xs text-slate-500 mt-1">أنشئ الحساب أولًا في Firebase Authentication → Users، ثم انسخ UID هنا. المدير يدير الطلبات والمنتجات، ومضيف المنتجات يدير الكتالوج والعروض.</p>
+          </div>
+          <div class="flex flex-col sm:flex-row gap-3">
+            <input id="staff-uid-input" type="text" dir="ltr" placeholder="UID حساب Firebase" class="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm">
+            <select id="staff-role-input" class="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm"><option value="admin">مدير</option><option value="product_manager">مضيف منتجات</option></select>
+            <button onclick="saveStaffRole()" class="bg-brand-600 hover:bg-brand-700 text-white font-bold px-5 py-2.5 rounded-xl text-sm">إضافة الصلاحية</button>
+          </div>
+          <div class="space-y-2">${staffRows || '<p class="text-xs text-slate-400">لم تُضف صلاحيات لفريق العمل بعد.</p>'}</div>
+        </div>
+
         <!-- Comprehensive User Accounts and Balance Management -->
         <div class="bg-white p-6 rounded-3xl border border-slate-100 space-y-4">
           <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2 border-b border-slate-100 pb-3">
@@ -2624,6 +2696,37 @@
           </div>
         </div>
       `;
+    }
+
+    async function saveStaffRole() {
+      if (firebaseAuth.currentUser?.uid !== FIREBASE_ADMIN_UID) {
+        showToast('هذه الصلاحية للمدير الأساسي فقط', 'error');
+        return;
+      }
+      const uid = document.getElementById('staff-uid-input').value.trim();
+      const role = document.getElementById('staff-role-input').value;
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(uid) || uid === FIREBASE_ADMIN_UID || !['admin', 'product_manager'].includes(role)) {
+        showToast('أدخل UID صحيحًا لحساب غير حساب المدير الأساسي', 'error');
+        return;
+      }
+      try {
+        await staffRolesRef.child(uid).set(role);
+        showToast('تم تفعيل صلاحية الحساب في Firebase');
+      } catch (error) {
+        console.error('[Clovs Firebase] staff role save failed:', error);
+        showToast('فشل حفظ الصلاحية. راجع قواعد Firebase.', 'error');
+      }
+    }
+
+    async function revokeStaffRole(uid) {
+      if (firebaseAuth.currentUser?.uid !== FIREBASE_ADMIN_UID) return;
+      try {
+        await staffRolesRef.child(uid).remove();
+        showToast('تم إلغاء صلاحية الحساب');
+      } catch (error) {
+        console.error('[Clovs Firebase] staff role revoke failed:', error);
+        showToast('فشل إلغاء الصلاحية', 'error');
+      }
     }
 
     function handleLogoUpload(e) {
@@ -2903,8 +3006,8 @@
     function editUserModal(userId) {
       const user = appState.usersList.find(u => u.id === userId);
       if (!user) return;
-      if (user.firebaseAdmin) {
-        showToast('بيانات حساب المدير تُدار من Firebase Authentication', 'info');
+      if (user.firebaseStaff) {
+        showToast('بيانات الفريق تُدار من Firebase Authentication', 'info');
         return;
       }
 
