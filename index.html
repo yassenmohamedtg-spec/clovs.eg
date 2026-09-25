@@ -214,19 +214,37 @@
       #header-brand-subtitle { display:none; }
     }
     @media (max-width:639px) {
+      main { padding:.75rem; }
       #header-inner { height:auto; min-height:106px; flex-wrap:wrap; gap:.5rem; padding-top:.6rem; padding-bottom:.6rem; }
       #header-brand-group { width:100%; justify-content:space-between; }
-      #header-actions { width:100%; justify-content:center; gap:.65rem; }
-      #header-actions > button, #header-auth-action > button { min-width:42px; min-height:42px; justify-content:center; }
+      #header-brand-group > div { min-width:0; }
+      #header-brand-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:65vw; }
+      #header-actions { width:100%; justify-content:space-evenly; gap:.25rem; min-width:0; }
+      #header-actions > button, #header-auth-action button#user-avatar-btn, #header-auth-action > button { min-width:40px; min-height:40px; justify-content:center; flex-shrink:0; }
+      #header-auth-action { min-width:0; }
+      #user-dropdown-menu { left:0; right:auto; width:min(14rem, calc(100vw - 1.5rem)); max-height:calc(100dvh - 7rem); overflow-y:auto; }
+      #sidebar-drawer { height:100dvh; bottom:auto; max-width:calc(100vw - .5rem); }
+      #sidebar-links { min-height:0; overscroll-behavior:contain; }
+      #sidebar-footer { flex-shrink:0; }
       #toast-container { left:.625rem; right:.625rem; width:auto; }
-      #home-hero { min-height:480px; }
-      #home-hero #slider-container .slider-image { object-position:center; }
-      #home-hero > .bg-gradient-to-t { padding:1.25rem 1.1rem 4.5rem; }
+      #home-hero { display:block; min-height:0; }
+      #slider-container { position:relative; inset:auto; height:clamp(155px, 52vw, 230px); background:#0f172a; }
+      #home-hero #slider-container .slider-image { object-fit:contain; object-position:center; opacity:1; }
+      #home-hero > .bg-gradient-to-t { position:relative; inset:auto; min-height:285px; justify-content:flex-start; background:#0f172a; padding:1.25rem 1.1rem 4.5rem; }
+      #home-hero > .bg-gradient-to-t > div { width:100%; }
       #home-hero #slide-title { font-size:clamp(1.45rem, 7vw, 2rem); line-height:1.35; }
       #home-hero #slide-cta { gap:.5rem; padding-top:.5rem; }
-      #home-hero #slide-cta button { padding:.65rem .9rem; font-size:.75rem; }
+      #home-hero #slide-cta button { flex:1 1 130px; min-width:0; padding:.65rem .75rem; font-size:.75rem; justify-content:center; text-align:center; }
       #home-hero .slider-arrow { width:36px; height:36px; top:auto !important; bottom:.75rem; transform:none !important; }
-      #slider-dots { top:auto; bottom:1.65rem; left:50%; transform:translateX(-50%); }
+      #slider-dots { top:auto; bottom:1.65rem; left:50%; transform:translateX(-50%); max-width:calc(100% - 110px); overflow-x:auto; scrollbar-width:none; }
+      #slider-dots::-webkit-scrollbar { display:none; }
+      .app-view, .app-view .grid > *, .app-view .flex > * { min-width:0; }
+      .app-view .flex.justify-between { flex-wrap:wrap; gap:.75rem; }
+      .app-view input, .app-view select, .app-view textarea { max-width:100%; min-width:0; }
+      .app-view button, .app-view label { overflow-wrap:anywhere; }
+      .app-view .overflow-x-auto { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+      #view-product-details .flex-wrap > button, #view-super-customizer .flex-wrap > button, #view-super-customizer .flex-wrap > label { min-width:140px; }
+      #custom-modal #modal-box-inner { max-height:calc(100dvh - 2rem); overflow-y:auto; }
       #view-auth > div, #view-staff-login > div { padding:1.25rem; }
       .app-view > .bg-white { padding:1.25rem; }
     }
@@ -1603,7 +1621,7 @@
       let dotsHtml = '';
       slides.forEach((_, idx) => {
         const active = idx === appState.currentSlideIdx ? 'w-8 bg-brand-500' : 'w-2 bg-white/50';
-        dotsHtml += `<button onclick="goToSlide(${idx})" class="h-2 rounded-full transition-all duration-300 ${active}"></button>`;
+        dotsHtml += `<button type="button" onclick="goToSlide(${idx})" aria-label="عرض الشريحة ${idx + 1}" aria-current="${idx === appState.currentSlideIdx ? 'true' : 'false'}" class="h-2 rounded-full transition-all duration-300 flex-shrink-0 ${active}"></button>`;
       });
       dotsContainer.innerHTML = dotsHtml;
     }
