@@ -757,6 +757,10 @@
     const marketerProfilesRef = firebaseDB.ref('marketerProfiles');
     const marketerUsernamesRef = firebaseDB.ref('marketerUsernames');
     const ordersRef = firebaseDB.ref('orders');
+    const withdrawRequestsRef = firebaseDB.ref('withdrawRequests');
+    let currentMarketerProfileRef = null;
+    let withdrawListenerRef = null;
+    let withdrawListenerCallback = null;
     let ordersListenerRef = null;
     let ordersListenerCallback = null;
     let ordersListenerUid = null;
@@ -782,6 +786,7 @@
       updateHeaderAuthUI();
       updateSidebarContent();
       startOrdersSync(authUser, role);
+      startWithdrawRequestsSync(authUser, role);
       return true;
     }
 
@@ -836,7 +841,24 @@
       updateHeaderAuthUI();
       updateSidebarContent();
       startOrdersSync(authUser, 'marketer');
+      startWithdrawRequestsSync(authUser, 'marketer');
+      watchCurrentMarketerProfile(authUser);
       return true;
+    }
+
+    function watchCurrentMarketerProfile(authUser) {
+      if (currentMarketerProfileRef) currentMarketerProfileRef.off('value');
+      currentMarketerProfileRef = marketerProfilesRef.child(authUser.uid);
+      currentMarketerProfileRef.on('value', snapshot => {
+        if (firebaseAuth.currentUser?.uid !== authUser.uid) return;
+        const profile = snapshot.val();
+        if (!profile || appState.currentUser?.role !== 'marketer') return;
+        Object.assign(appState.currentUser, profile);
+        const cached = appState.usersList.find(user => user.id === appState.currentUser.id);
+        if (cached) Object.assign(cached, profile);
+        if (appState.currentView === 'marketer-dashboard') renderMarketerDashboard();
+        if (appState.currentView === 'marketer-withdraw') renderMarketerWithdrawView();
+      }, error => console.error('[Clovs Firebase] marketer profile sync failed:', error));
     }
 
     function startMarketerProfilesSync() {
@@ -850,6 +872,7 @@
         }));
         appState.usersList = appState.usersList.filter(user => !user.firebaseMarketer).concat(profiles);
         if (appState.currentView === 'super-customizer') renderSuperCustomizerView();
+        if (appState.currentView === 'admin-dashboard') renderAdminDashboard();
       }, error => console.error('[Clovs Firebase] marketer list read failed:', error));
     }
 
@@ -913,6 +936,30 @@
       updateAdminOrderBadge();
     }
 
+    function stopWithdrawRequestsSync() {
+      if (withdrawListenerRef && withdrawListenerCallback) withdrawListenerRef.off('value', withdrawListenerCallback);
+      withdrawListenerRef = null;
+      withdrawListenerCallback = null;
+      appState.withdrawRequests = [];
+    }
+
+    function startWithdrawRequestsSync(authUser, role) {
+      stopWithdrawRequestsSync();
+      const isAdmin = role === 'admin' || role === 'super_admin';
+      withdrawListenerRef = isAdmin ? withdrawRequestsRef : withdrawRequestsRef.orderByChild('marketerUid').equalTo(authUser.uid);
+      withdrawListenerCallback = snapshot => {
+        appState.withdrawRequests = Object.entries(snapshot.val() || {}).map(([firebaseKey, request]) => ({
+          ...request, firebaseKey
+        })).sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
+        if (appState.currentView === 'admin-dashboard') renderAdminDashboard();
+        if (appState.currentView === 'marketer-withdraw') renderMarketerWithdrawView();
+      };
+      withdrawListenerRef.on('value', withdrawListenerCallback, error => {
+        console.error('[Clovs Firebase] withdrawal requests read failed:', error);
+        showToast('تعذر تحميل طلبات السحب. راجع قواعد Firebase.', 'error');
+      });
+    }
+
     firebaseAuth.onAuthStateChanged(async (authUser) => {
       if (authUser) {
         if (marketerRegistrationInProgress || marketerLoginInProgress) return;
@@ -951,6 +998,11 @@
         }
       } else {
         stopOrdersSync();
+        stopWithdrawRequestsSync();
+        if (currentMarketerProfileRef) {
+          currentMarketerProfileRef.off('value');
+          currentMarketerProfileRef = null;
+        }
         if (appState.currentUser?.firebaseStaff || appState.currentUser?.firebaseMarketer) {
           appState.currentUser = null;
           updateHeaderAuthUI();
@@ -2086,6 +2138,7 @@
         grandTotal: subtotal + shippingRate,
         paymentMethod: appState.activeCart.paymentMethod,
         paymentProof: { ...appState.activeCart.paymentProof },
+        commissionCredited: false,
         status: 'pending' // 'pending', 'confirmed', 'shipping', 'delivered', 'cancelled', 'returned'
       };
 
@@ -2520,9 +2573,10 @@
       `;
     }
 
-    function submitWithdrawRequest() {
+    let withdrawSubmissionInProgress = false;
+    async function submitWithdrawRequest() {
       const user = appState.currentUser;
-      if (!user || user.role !== 'marketer') return;
+      if (!user?.firebaseMarketer || !firebaseAuth.currentUser || withdrawSubmissionInProgress) return;
 
       const amtInput = document.getElementById('withdraw-amount-input');
       const amount = parseFloat(amtInput.value);
@@ -2544,23 +2598,38 @@
         return;
       }
 
-      user.payoutDetails = details;
-      user.balance -= amount;
-
+      const requestRef = withdrawRequestsRef.push();
       const req = {
         id: 'WTH-' + Math.floor(1000 + Math.random() * 9000),
         userId: user.id,
+        marketerUid: firebaseAuth.currentUser.uid,
         userName: user.name,
         amount: amount,
         method: method,
         details: details,
         date: new Date().toLocaleDateString('ar-EG'),
+        createdAt: firebase.database.ServerValue.TIMESTAMP,
         status: 'pending'
       };
 
-      appState.withdrawRequests.unshift(req);
+      withdrawSubmissionInProgress = true;
+      const button = document.querySelector('button[onclick="submitWithdrawRequest()"]');
+      if (button) button.disabled = true;
+      try {
+        await firebaseDB.ref().update({
+          [`marketerProfiles/${user.uid}/balance`]: firebase.database.ServerValue.increment(-amount),
+          [`marketerProfiles/${user.uid}/payoutDetails`]: details,
+          [`withdrawRequests/${requestRef.key}`]: req
+        });
+      } catch (error) {
+        console.error('[Clovs Firebase] withdrawal request failed:', error);
+        showToast('تعذر إرسال طلب السحب. تحقق من رصيدك وقواعد Firebase.', 'error');
+        return;
+      } finally {
+        withdrawSubmissionInProgress = false;
+        if (button) button.disabled = false;
+      }
       openModal('تم تقديم طلب السحب بنجاح', `تم استلام طلب سحب مبلغ ${amount} ج.م وسيتم تنفيذه في موعد التحويلات القادم (الاثنين أو الجمعة).`);
-      renderMarketerWithdrawView();
     }
 
     function renderProductManagerDashboard() {
@@ -2983,39 +3052,47 @@
       if (!o?.firebaseKey || !['admin', 'super_admin'].includes(appState.currentUser?.role)) return;
 
       const oldStatus = o.status;
-      try {
-        await ordersRef.child(o.firebaseKey).child('status').set(newStatus);
-      } catch (error) {
-        console.error('[Clovs Firebase] order status update failed:', error);
-        showToast('تعذر حفظ حالة الأوردر في Firebase.', 'error');
+      if (oldStatus === newStatus) return;
+      const wasCredited = o.commissionCredited === true;
+      const shouldCredit = newStatus === 'delivered' && !wasCredited;
+      const shouldReverse = newStatus !== 'delivered' && wasCredited;
+      const amount = Number(o.totalCommission);
+      if ((shouldCredit || shouldReverse) && (!o.marketerUid || !Number.isFinite(amount) || amount < 0)) {
+        showToast('بيانات عمولة الأوردر غير مكتملة؛ لم تتغير حالته.', 'error');
         renderAdminDashboard();
         return;
       }
-      o.status = newStatus;
-
-      const marketer = appState.usersList.find(u => u.id === o.marketerId);
-      if (marketer) {
-        // If became delivered, add balance
-        if (newStatus === 'delivered' && oldStatus !== 'delivered') {
-          marketer.balance = (marketer.balance || 0) + o.totalCommission;
-          showToast(`تم تغيير الحالة لـ "تم التسليم" وإضافة ${o.totalCommission} ج.م لرصيد المسوق ${marketer.name}!`);
-        } else if (oldStatus === 'delivered' && newStatus !== 'delivered') {
-          marketer.balance = Math.max(0, (marketer.balance || 0) - o.totalCommission);
-          showToast(`تم سحب العمولة (${o.totalCommission} ج.م) من رصيد المسوق لتغير حالة الأوردر.`);
-        } else {
-          showToast(`تم تحديث حالة الأوردر (${o.id}) بنجاح.`);
-        }
+      const changes = { [`orders/${o.firebaseKey}/status`]: newStatus };
+      if (shouldCredit || shouldReverse) {
+        changes[`orders/${o.firebaseKey}/commissionCredited`] = shouldCredit;
+        changes[`marketerProfiles/${o.marketerUid}/balance`] = firebase.database.ServerValue.increment(shouldCredit ? amount : -amount);
       }
-
-      renderAdminDashboard();
+      try {
+        await firebaseDB.ref().update(changes);
+      } catch (error) {
+        console.error('[Clovs Firebase] order status update failed:', error);
+        showToast('تعذر حفظ الحالة والعمولة معاً. تحقق من قواعد Firebase ورصيد المسوق.', 'error');
+        renderAdminDashboard();
+        return;
+      }
+      showToast(shouldCredit
+        ? `تم التسليم وإضافة ${amount} ج.م لرصيد المسوق فوراً.`
+        : shouldReverse
+          ? `تم تحديث الحالة وخصم ${amount} ج.م من رصيد المسوق.`
+          : `تم تحديث حالة الأوردر (${o.id}) بنجاح.`);
     }
 
-    function approveWithdrawRequest(reqId) {
+    async function approveWithdrawRequest(reqId) {
       const w = appState.withdrawRequests.find(x => x.id === reqId);
-      if (!w) return;
-      w.status = 'paid';
+      if (!w?.firebaseKey || w.status !== 'pending') return;
+      try {
+        await withdrawRequestsRef.child(w.firebaseKey).child('status').set('paid');
+      } catch (error) {
+        console.error('[Clovs Firebase] withdrawal approval failed:', error);
+        showToast('تعذر حفظ صرف طلب السحب في Firebase.', 'error');
+        return;
+      }
       showToast(`تم تأكيد صرف مبلغ ${w.amount} ج.م للمسوق ${w.userName} بنجاح!`);
-      renderAdminDashboard();
     }
 
     function approveRegistration(reqId) {
