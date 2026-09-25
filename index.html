@@ -71,6 +71,170 @@
     .product-card:hover { transform: translateY(-5px); box-shadow: 0 22px 45px -24px rgba(15, 23, 42, .35); }
     .social-card { transition: transform .25s ease, box-shadow .25s ease; }
     .social-card:hover { transform: translateY(-4px); box-shadow: 0 20px 36px -22px rgba(15, 23, 42, .3); }
+    /* Comfortable dark palette with readable text, menus, alerts, and form fields. */
+    body.dark-mode { background:#0d1422 !important; color:#e2e8f0 !important; color-scheme:dark; }
+    body.dark-mode .bg-white,
+    body.dark-mode [class~="bg-white/90"] { background-color:#172234 !important; }
+    body.dark-mode .bg-slate-50 { background-color:#111b2b !important; }
+    body.dark-mode .bg-slate-100 { background-color:#202c3f !important; }
+    body.dark-mode .bg-slate-100\/90 { background-color:rgba(32,44,63,.94) !important; }
+    body.dark-mode .bg-slate-200 { background-color:#2d3a4f !important; }
+    body.dark-mode .bg-slate-300 { background-color:#3a4960 !important; }
+    body.dark-mode .text-slate-900,
+    body.dark-mode .text-slate-800 { color:#f1f5f9 !important; }
+    body.dark-mode .text-slate-700 { color:#e2e8f0 !important; }
+    body.dark-mode .text-slate-600,
+    body.dark-mode .text-slate-500 { color:#c0ccda !important; }
+    body.dark-mode .text-slate-400 { color:#91a0b4 !important; }
+    body.dark-mode .text-slate-300 { color:#b5c1d0 !important; }
+    body.dark-mode .border-slate-100,
+    body.dark-mode .border-slate-200,
+    body.dark-mode .border-slate-300 { border-color:#344258 !important; }
+
+    /* Soft, low-glare surfaces for colored badges, notices, and nested menus. */
+    body.dark-mode .bg-brand-50,
+    body.dark-mode .bg-brand-50\/50,
+    body.dark-mode .bg-brand-50\/70 { background-color:#18332e !important; }
+    body.dark-mode .bg-brand-100 { background-color:#1d423a !important; }
+    body.dark-mode .bg-action-50,
+    body.dark-mode .bg-orange-100 { background-color:#3b2d21 !important; }
+    body.dark-mode .bg-rose-50 { background-color:#38212b !important; }
+    body.dark-mode .bg-rose-100 { background-color:#482632 !important; }
+    body.dark-mode .bg-amber-50 { background-color:#382f20 !important; }
+    body.dark-mode .bg-amber-100 { background-color:#47391f !important; }
+    body.dark-mode .bg-emerald-50 { background-color:#18332b !important; }
+    body.dark-mode .bg-emerald-100 { background-color:#204236 !important; }
+    body.dark-mode .bg-blue-50 { background-color:#1b2d43 !important; }
+    body.dark-mode .bg-blue-100 { background-color:#223954 !important; }
+    body.dark-mode .bg-indigo-50 { background-color:#252744 !important; }
+    body.dark-mode .bg-purple-100 { background-color:#302844 !important; }
+    body.dark-mode .hover\:bg-slate-50:hover,
+    body.dark-mode .hover\:bg-slate-50\/50:hover,
+    body.dark-mode .hover\:bg-slate-100:hover { background-color:#202c3f !important; }
+    body.dark-mode .hover\:bg-slate-200:hover,
+    body.dark-mode .hover\:bg-slate-300:hover { background-color:#344258 !important; }
+    body.dark-mode .hover\:bg-white:hover { background-color:#263349 !important; }
+    body.dark-mode .hover\:bg-rose-50:hover,
+    body.dark-mode .hover\:bg-rose-100:hover { background-color:#482632 !important; }
+    body.dark-mode .hover\:bg-brand-50:hover,
+    body.dark-mode .hover\:bg-brand-100:hover { background-color:#1d423a !important; }
+
+    /* Accent text stays bright enough over the darker tinted surfaces. */
+    body.dark-mode .text-brand-900,
+    body.dark-mode .text-brand-800,
+    body.dark-mode .text-brand-300,
+    body.dark-mode .text-brand-700,
+    body.dark-mode .text-brand-600,
+    body.dark-mode .hover\:text-brand-600:hover,
+    body.dark-mode .hover\:text-brand-700:hover,
+    body.dark-mode .hover\:text-brand-800:hover { color:#6ee7b7 !important; }
+    body.dark-mode .text-action-500,
+    body.dark-mode .text-amber-800,
+    body.dark-mode .text-amber-600,
+    body.dark-mode .text-amber-500 { color:#f6c77a !important; }
+    body.dark-mode .text-emerald-800,
+    body.dark-mode .text-emerald-700,
+    body.dark-mode .text-emerald-600 { color:#79dfb0 !important; }
+    body.dark-mode .hover\:text-slate-600:hover { color:#d5deea !important; }
+    body.dark-mode .text-rose-800,
+    body.dark-mode .text-rose-700,
+    body.dark-mode .text-rose-600,
+    body.dark-mode .text-rose-500,
+    body.dark-mode .text-rose-400 { color:#f6a3b1 !important; }
+    body.dark-mode .text-orange-800 { color:#f6bd8a !important; }
+    body.dark-mode .text-blue-800,
+    body.dark-mode .text-blue-600,
+    body.dark-mode .text-indigo-600 { color:#9bc5f5 !important; }
+    body.dark-mode .text-purple-800 { color:#c5b5f2 !important; }
+    body.dark-mode .border-brand-100 { border-color:#28564a !important; }
+    body.dark-mode .border-rose-100 { border-color:#59313f !important; }
+    body.dark-mode .border-amber-300 { border-color:#66502d !important; }
+    body.dark-mode .border-emerald-100 { border-color:#285643 !important; }
+
+    body.dark-mode input,
+    body.dark-mode select,
+    body.dark-mode textarea { background-color:#101a29 !important; color:#edf2f7 !important; border-color:#3a4960 !important; }
+    body.dark-mode select option { background-color:#172234; color:#edf2f7; }
+    body.dark-mode input::placeholder,
+    body.dark-mode textarea::placeholder { color:#91a0b4 !important; }
+    body.dark-mode .product-card,
+    body.dark-mode .social-card { border-color:#344258 !important; }
+    body.dark-mode #sidebar-drawer { background-color:#172234 !important; }
+    body.dark-mode .bg-slate-900 { background-color:#101a29 !important; }
+    body.dark-mode .bg-slate-800 { background-color:#1b2739 !important; }
+    body.dark-mode [class~="bg-white/10"] { background-color:rgba(255,255,255,.1) !important; }
+    body.dark-mode [class~="bg-white/20"] { background-color:rgba(255,255,255,.16) !important; }
+    /* Keep the top navigation visibly dark, including the semi-transparent pill and hover states. */
+    body.dark-mode header { background:#0b1220 !important; border-color:#2d4056 !important; }
+    body.dark-mode #desktop-nav { background:#101d2d !important; border-color:#33465a !important; }
+    body.dark-mode #desktop-nav .nav-btn { background:transparent !important; color:#eef2f7 !important; box-shadow:none !important; }
+    body.dark-mode #desktop-nav .nav-btn:hover,
+    body.dark-mode #desktop-nav .nav-btn:focus-visible { background:#2d3a4f !important; color:#f1f5f9 !important; }
+    body.dark-mode #desktop-nav .nav-btn.is-active { background:#155042 !important; color:#e3fff0 !important; box-shadow:0 3px 10px rgba(0,0,0,.2) !important; }
+    body.dark-mode header #theme-toggle,
+    body.dark-mode header button[title="فتح القائمة"],
+    body.dark-mode header button[title="قائمة المفضلة"],
+    body.dark-mode header button[title="سلة المشتريات"] { background:#1c2b3d !important; color:#f1f5f9 !important; }
+    body.dark-mode header #header-brand-title { color:#ffffff !important; }
+    body.dark-mode header #header-brand-subtitle { color:#b9c7d8 !important; }
+    body.dark-mode #header-auth-action #user-dropdown-menu,
+    body.dark-mode #sidebar-drawer,
+    body.dark-mode #custom-modal #modal-box-inner { background:#111d2f !important; border-color:#344258 !important; }
+
+    /* Gentle movement for page changes, cards, and the hero slider. */
+    @keyframes gentleViewEnter { from { opacity:0; transform:translateY(18px); } to { opacity:1; transform:translateY(0); } }
+    header { animation:gentleViewEnter .55s cubic-bezier(.2,.7,.25,1) both; }
+    .app-view.page-opening:not(.hidden) { animation:gentleViewEnter .55s cubic-bezier(.2,.7,.25,1) both; }
+    .product-card img { transition:transform .45s cubic-bezier(.2,.7,.25,1); }
+    .product-card:hover img { transform:scale(1.06); }
+    #slider-container .slider-image { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:.6; transition:transform .7s cubic-bezier(.2,.7,.25,1), opacity .7s ease; }
+    #home-hero .slider-arrow:hover { transform:translateY(-50%) scale(1.08); background-color:rgba(15,23,42,.85); }
+    #slider-dots button:hover { transform:scale(1.18); }
+    #view-home .home-feature-card { transition:transform .25s ease, box-shadow .25s ease; }
+    #view-home .home-feature-card:hover { transform:translateY(-5px); box-shadow:0 18px 38px -24px rgba(15,23,42,.42); }
+    button { transition:transform .18s ease, box-shadow .18s ease, background-color .18s ease, color .18s ease, border-color .18s ease; }
+    button:active { filter:brightness(.96); }
+    #sidebar-drawer { transition:transform .48s cubic-bezier(.18,.82,.23,1) !important; will-change:transform; }
+    #sidebar-backdrop { opacity:0; transition:opacity .38s ease !important; }
+    #sidebar-backdrop.sidebar-backdrop-visible { opacity:1; }
+    @keyframes menuLinkEnter { from { opacity:0; transform:translateX(12px); } to { opacity:1; transform:translateX(0); } }
+    #sidebar-drawer:not(.translate-x-full) #sidebar-links > button { animation:menuLinkEnter .38s ease-out both; }
+    #sidebar-drawer:not(.translate-x-full) #sidebar-links > button:nth-child(2) { animation-delay:.04s; }
+    #sidebar-drawer:not(.translate-x-full) #sidebar-links > button:nth-child(3) { animation-delay:.08s; }
+    #sidebar-drawer:not(.translate-x-full) #sidebar-links > button:nth-child(4) { animation-delay:.12s; }
+    /* Fluid layout from small phones through tablets and wide desktop screens. */
+    html, body { max-width:100%; overflow-x:hidden; }
+    main, .app-view, .app-view > *, #header-inner > *, .overflow-x-auto { min-width:0; }
+    #sidebar-drawer { width:min(20rem, calc(100vw - 1rem)); }
+    .overflow-x-auto { max-width:100%; }
+    .overflow-x-auto table { min-width:620px; }
+    .app-view p, .app-view td, .app-view a { overflow-wrap:anywhere; }
+    #header-inner { gap:.75rem; }
+    @media (max-width:1279px) {
+      #header-brand-subtitle { display:none; }
+    }
+    @media (max-width:639px) {
+      #header-inner { height:auto; min-height:106px; flex-wrap:wrap; gap:.5rem; padding-top:.6rem; padding-bottom:.6rem; }
+      #header-brand-group { width:100%; justify-content:space-between; }
+      #header-actions { width:100%; justify-content:center; gap:.65rem; }
+      #header-actions > button, #header-auth-action > button { min-width:42px; min-height:42px; justify-content:center; }
+      #toast-container { left:.625rem; right:.625rem; width:auto; }
+      #home-hero { min-height:535px; }
+      #home-hero #slide-title { font-size:clamp(1.45rem, 7vw, 2rem); line-height:1.35; }
+      #home-hero #slide-cta { gap:.5rem; padding-top:.5rem; }
+      #home-hero #slide-cta button { padding:.65rem .9rem; font-size:.75rem; }
+      #home-hero .slider-arrow { width:36px; height:36px; top:35%; }
+      #slider-dots { top:1rem; bottom:auto; left:1rem; }
+      #view-auth > div, #view-staff-login > div { padding:1.25rem; }
+      .app-view > .bg-white { padding:1.25rem; }
+    }
+    @media (min-width:640px) and (max-width:1279px) {
+      #header-inner { gap:1rem; }
+      #header-actions { flex-shrink:0; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior:auto !important; animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; }
+    }
   </style>
 </head>
 
@@ -119,10 +283,10 @@
   </aside>
 
   <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+    <div id="header-inner" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
       
       <!-- Right Side: Sidebar Toggle & Brand Logo -->
-      <div class="flex items-center gap-3">
+      <div id="header-brand-group" class="flex items-center gap-3">
         <!-- Sidebar Toggle Button (Moved to the Right) -->
         <button onclick="toggleSidebar(true)" class="p-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 transition flex items-center gap-2 text-sm font-extrabold shadow-sm" title="فتح القائمة">
           <i class="fa-solid fa-bars text-lg text-brand-600"></i>
@@ -140,7 +304,7 @@
       </div>
 
       <!-- Center Desktop Nav Links (Streamlined: Home, Products, Top Marketers only) -->
-      <nav class="hidden md:flex items-center gap-1.5 bg-slate-100/90 p-1.5 rounded-2xl border border-slate-200/80" id="desktop-nav">
+      <nav class="hidden xl:flex items-center gap-1.5 bg-slate-100/90 p-1.5 rounded-2xl border border-slate-200/80" id="desktop-nav">
         <button onclick="switchView('home')" class="nav-btn px-4 py-2 rounded-xl text-xs sm:text-sm font-bold text-slate-700 hover:bg-white hover:text-brand-600 transition shadow-none" data-view="home">
           <i class="fa-solid fa-house ml-1 text-xs"></i> الرئيسية
         </button>
@@ -156,7 +320,12 @@
       </nav>
 
       <!-- Left Header Actions: Favorites, Cart, Profile -->
-      <div class="flex items-center gap-2 sm:gap-3">
+      <div id="header-actions" class="flex items-center gap-2 sm:gap-3">
+        <!-- Theme Toggle -->
+        <button id="theme-toggle" onclick="toggleTheme()" class="p-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition flex items-center justify-center" title="تفعيل الوضع الليلي" aria-label="تفعيل الوضع الليلي">
+          <i id="theme-toggle-icon" class="fa-solid fa-moon text-amber-500 text-base sm:text-lg" aria-hidden="true"></i>
+        </button>
+
         <!-- Favorites Button -->
         <button onclick="switchView('favorites')" class="relative p-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition flex items-center gap-1.5 text-xs sm:text-sm font-bold" title="قائمة المفضلة">
           <i class="fa-solid fa-heart text-rose-500 text-base sm:text-lg"></i>
@@ -182,14 +351,14 @@
     
     <!-- VIEW 1: HOME PAGE -->
     <div id="view-home" class="app-view space-y-10 fade-in">
-      <div class="relative rounded-3xl overflow-hidden shadow-2xl bg-slate-900 min-h-[400px] sm:min-h-[460px] flex items-center">
+      <div id="home-hero" class="relative rounded-3xl overflow-hidden shadow-2xl bg-slate-900 min-h-[400px] sm:min-h-[460px] flex items-center">
         <div id="slider-container" class="absolute inset-0 w-full h-full"></div>
         <div class="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/40 to-transparent flex flex-col justify-end p-6 sm:p-12 text-white z-10">
           <div class="max-w-2xl space-y-3">
             <span id="slide-tag" class="bg-brand-500 text-white text-xs font-black px-3.5 py-1.5 rounded-full uppercase tracking-wider inline-block">منصة نمو الأرباح</span>
             <h2 id="slide-title" class="text-3xl sm:text-5xl font-black leading-tight">ابدأ مشروع الدروبشيبينغ الخاص بك اليوم بكل سهولة</h2>
             <p id="slide-desc" class="text-slate-300 text-sm sm:text-base leading-relaxed">اختر منتجاتك، ضع عموتك الثابتة، وابدأ بتحقيق أرباح حقيقية وفورية مع أقوى نظام لوجستي في مصر.</p>
-            <div class="pt-4 flex flex-wrap gap-3">
+            <div id="slide-cta" class="pt-4 flex flex-wrap gap-3">
               <button onclick="switchView('products')" class="bg-action-500 hover:bg-action-600 text-white font-extrabold px-7 py-3.5 rounded-2xl shadow-lg shadow-action-500/30 transition text-sm flex items-center gap-2">
                 <i class="fa-solid fa-bag-shopping"></i> تصفح المنتجات الآن
               </button>
@@ -199,12 +368,18 @@
             </div>
           </div>
         </div>
+        <button type="button" onclick="changeSlide(-1)" aria-label="السلايد السابق" title="السابق" class="slider-arrow absolute right-4 top-1/2 -translate-y-1/2 z-20 w-11 h-11 rounded-full bg-slate-950/45 hover:bg-slate-950/70 text-white backdrop-blur-sm border border-white/25 flex items-center justify-center transition focus:outline-none focus:ring-2 focus:ring-white">
+          <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+        </button>
+        <button type="button" onclick="changeSlide(1)" aria-label="السلايد التالي" title="التالي" class="slider-arrow absolute left-4 top-1/2 -translate-y-1/2 z-20 w-11 h-11 rounded-full bg-slate-950/45 hover:bg-slate-950/70 text-white backdrop-blur-sm border border-white/25 flex items-center justify-center transition focus:outline-none focus:ring-2 focus:ring-white">
+          <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+        </button>
         <div id="slider-dots" class="absolute bottom-6 left-6 z-20 flex gap-2"></div>
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-start gap-4 hover:shadow-md transition">
-          <div class="w-14 h-14 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center text-2xl flex-shrink-0">
+        <div class="home-feature-card bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-start gap-4 hover:shadow-md transition">
+          <div class="feature-icon w-14 h-14 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center text-2xl flex-shrink-0">
             <i class="fa-solid fa-chart-line"></i>
           </div>
           <div>
@@ -212,8 +387,8 @@
             <p class="text-slate-500 text-sm leading-relaxed">ضع عموتك بالجنيه فوق سعر المنتج بدون أي سقف وبكل حرية تامة.</p>
           </div>
         </div>
-        <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-start gap-4 hover:shadow-md transition">
-          <div class="w-14 h-14 rounded-2xl bg-action-50 text-action-500 flex items-center justify-center text-2xl flex-shrink-0">
+        <div class="home-feature-card bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-start gap-4 hover:shadow-md transition">
+          <div class="feature-icon w-14 h-14 rounded-2xl bg-action-50 text-action-500 flex items-center justify-center text-2xl flex-shrink-0">
             <i class="fa-solid fa-truck-fast"></i>
           </div>
           <div>
@@ -221,8 +396,8 @@
             <p class="text-slate-500 text-sm leading-relaxed">متاح للعميل معاينة الأوردر مجاناً عند الاستلام لضمان أعلى مصداقية.</p>
           </div>
         </div>
-        <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-start gap-4 hover:shadow-md transition">
-          <div class="w-14 h-14 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center text-2xl flex-shrink-0">
+        <div class="home-feature-card bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-start gap-4 hover:shadow-md transition">
+          <div class="feature-icon w-14 h-14 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center text-2xl flex-shrink-0">
             <i class="fa-solid fa-wallet"></i>
           </div>
           <div>
@@ -336,8 +511,8 @@
 
         <form id="form-login" onsubmit="handleLogin(event)" class="space-y-4">
           <div>
-            <label class="block text-xs font-bold text-slate-700 mb-1.5">اسم المستخدم</label>
-            <input type="text" id="login-username" required autocomplete="username" placeholder="اسم المستخدم..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-500 transition">
+            <label class="block text-xs font-bold text-slate-700 mb-1.5">البريد الإلكتروني أو اسم المستخدم القديم</label>
+            <input type="text" id="login-username" required autocomplete="username" placeholder="email@example.com" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-500 transition">
           </div>
           <div>
             <label class="block text-xs font-bold text-slate-700 mb-1.5">كلمة المرور</label>
@@ -361,11 +536,15 @@
           </div>
           <div>
             <label class="block text-xs font-bold text-slate-700 mb-1.5">اسم المستخدم</label>
-            <input type="text" id="reg-username" required placeholder="اسم المستخدم بالإنجليزية..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-500 transition">
+            <input type="text" id="reg-username" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" autocomplete="username" placeholder="حروف إنجليزية وأرقام وشرطة سفلية..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-500 transition">
           </div>
           <div>
-            <label class="block text-xs font-bold text-slate-700 mb-1.5">كلمة المرور</label>
-            <input type="password" id="reg-password" required placeholder="••••••••" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-500 transition">
+            <label class="block text-xs font-bold text-slate-700 mb-1.5">البريد الإلكتروني</label>
+            <input type="email" id="reg-email" required autocomplete="email" dir="ltr" placeholder="email@example.com" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-500 transition">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1.5">كلمة المرور (8 أحرف أو أرقام على الأقل)</label>
+            <input type="password" id="reg-password" required minlength="8" autocomplete="new-password" placeholder="8 أحرف على الأقل" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-500 transition">
           </div>
           <div>
             <label class="block text-xs font-bold text-slate-700 mb-1.5">نوع الحساب (الدور)</label>
@@ -485,7 +664,7 @@
   <footer class="bg-white border-t border-slate-200 mt-16 py-8">
     <div class="max-w-7xl mx-auto px-4 text-center space-y-3">
       <p id="footer-brand-text" class="text-slate-700 font-bold text-sm">منصة Clovs للدروبشيبينغ الذكي © 2026</p>
-      <div class="flex justify-center gap-6 text-xs text-slate-500">
+      <div class="flex flex-wrap justify-center gap-x-6 gap-y-3 text-xs text-slate-500">
         <button onclick="switchView('returns-policy')" class="hover:text-brand-600 transition">سياسة الاستبدال والاسترجاع</button>
         <button onclick="switchView('contact-support')" class="hover:text-brand-600 transition">الدعم والتواصل</button>
         <button onclick="switchView('social')" class="hover:text-brand-600 transition">حسابات السوشيال</button>
@@ -568,6 +747,8 @@
     const slidesRef = firebaseDB.ref('siteSettings/slides');
     const socialLinksRef = firebaseDB.ref('siteSettings/socialLinks');
     const staffRolesRef = firebaseDB.ref('staffRoles');
+    const marketerProfilesRef = firebaseDB.ref('marketerProfiles');
+    const marketerUsernamesRef = firebaseDB.ref('marketerUsernames');
     let firebaseProductsListenerStarted = false;
     let staffRolesListenerStarted = false;
     let currentStaffRoleRef = null;
@@ -624,36 +805,96 @@
       }, error => console.error('[Clovs Firebase] current staff role read failed:', error));
     }
 
+    let marketerRegistrationInProgress = false;
+    let marketerLoginInProgress = false;
+    let marketerProfilesSyncStarted = false;
+
+    function setFirebaseMarketerSession(authUser, profile) {
+      if (!authUser || !profile || profile.role !== 'marketer') return false;
+      const user = {
+        ...profile, id: `firebase-marketer-${authUser.uid}`, uid: authUser.uid,
+        email: authUser.email || profile.email, role: 'marketer',
+        status: profile.status || 'approved', password: '', firebaseMarketer: true
+      };
+      const existing = appState.usersList.findIndex(item => item.id === user.id);
+      if (existing === -1) appState.usersList.push(user);
+      else appState.usersList[existing] = user;
+      appState.currentUser = user;
+      updateHeaderAuthUI();
+      updateSidebarContent();
+      return true;
+    }
+
+    function startMarketerProfilesSync() {
+      if (marketerProfilesSyncStarted) return;
+      marketerProfilesSyncStarted = true;
+      marketerProfilesRef.on('value', snapshot => {
+        const profiles = Object.entries(snapshot.val() || {}).map(([uid, profile]) => ({
+          ...profile, id: `firebase-marketer-${uid}`, uid,
+          role: 'marketer', status: profile.status || 'approved',
+          password: '', firebaseMarketer: true
+        }));
+        appState.usersList = appState.usersList.filter(user => !user.firebaseMarketer).concat(profiles);
+        if (appState.currentView === 'super-customizer') renderSuperCustomizerView();
+      }, error => console.error('[Clovs Firebase] marketer list read failed:', error));
+    }
+
     firebaseAuth.onAuthStateChanged(async (authUser) => {
       if (authUser) {
+        if (marketerRegistrationInProgress || marketerLoginInProgress) return;
         try {
+          if (authUser.uid !== FIREBASE_ADMIN_UID) {
+            let profile = null;
+            try {
+              const snapshot = await marketerProfilesRef.child(authUser.uid).once('value');
+              profile = snapshot.val();
+            } catch (error) {
+              // Staff accounts need not have access to marketer profile records.
+              console.info('[Clovs Firebase] no marketer profile for staff account');
+            }
+            if (firebaseAuth.currentUser?.uid !== authUser.uid) return;
+            if (profile && profile.status !== 'approved') {
+              await firebaseAuth.signOut();
+              showToast('حساب المسوق غير مفعل حالياً.', 'error');
+              return;
+            }
+            if (profile && setFirebaseMarketerSession(authUser, profile)) return;
+          }
           const role = await getFirebaseStaffRole(authUser);
+          if (firebaseAuth.currentUser?.uid !== authUser.uid) return;
           if (!role) {
             await firebaseAuth.signOut();
-            showToast('حساب Firebase ده ليس له صلاحية في فريق الموقع', 'error');
+            showToast('هذا الحساب غير مسجل كمسوق أو كعضو في فريق الموقع', 'error');
             return;
           }
           setFirebaseStaffSession(authUser, role);
           if (role === 'super_admin') startStaffRolesSync();
           else watchCurrentStaffRole(authUser);
+          if (role === 'super_admin' || role === 'admin') startMarketerProfilesSync();
         } catch (error) {
-          console.error('[Clovs Firebase] staff role lookup failed:', error);
-          showToast('تعذر التحقق من صلاحية حساب الفريق. راجع قواعد Firebase.', 'error');
+          console.error('[Clovs Firebase] account role lookup failed:', error);
+          showToast('تعذر التحقق من الحساب. راجع اتصال Firebase وقواعد قاعدة البيانات.', 'error');
         }
-      } else if (appState.currentUser?.firebaseStaff) {
-        appState.currentUser = null;
-        updateHeaderAuthUI();
-        updateSidebarContent();
-        if (['super-customizer', 'admin-dashboard', 'product-manager'].includes(appState.currentView)) switchView('home');
-      }
-      if (!authUser && staffRolesListenerStarted) {
-        staffRolesRef.off('value');
-        staffRolesListenerStarted = false;
-        appState.staffRoles = {};
-      }
-      if (!authUser && currentStaffRoleRef) {
-        currentStaffRoleRef.off('value');
-        currentStaffRoleRef = null;
+      } else {
+        if (appState.currentUser?.firebaseStaff || appState.currentUser?.firebaseMarketer) {
+          appState.currentUser = null;
+          updateHeaderAuthUI();
+          updateSidebarContent();
+          if (['super-customizer', 'admin-dashboard', 'product-manager', 'marketer-dashboard', 'marketer-withdraw'].includes(appState.currentView)) switchView('home');
+        }
+        if (staffRolesListenerStarted) {
+          staffRolesRef.off('value');
+          staffRolesListenerStarted = false;
+          appState.staffRoles = {};
+        }
+        if (currentStaffRoleRef) {
+          currentStaffRoleRef.off('value');
+          currentStaffRoleRef = null;
+        }
+        if (marketerProfilesSyncStarted) {
+          marketerProfilesRef.off('value');
+          marketerProfilesSyncStarted = false;
+        }
       }
     });
 
@@ -786,16 +1027,28 @@
       setTimeout(() => modal.classList.add('hidden'), 200);
     }
 
+    let sidebarCloseTimer = null;
+    let sidebarFrame = null;
     function toggleSidebar(open) {
       const backdrop = document.getElementById('sidebar-backdrop');
       const drawer = document.getElementById('sidebar-drawer');
+      if (sidebarCloseTimer) clearTimeout(sidebarCloseTimer);
+      if (sidebarFrame) cancelAnimationFrame(sidebarFrame);
       if (open) {
-        backdrop.classList.remove('hidden');
-        setTimeout(() => drawer.classList.remove('translate-x-full'), 10);
         updateSidebarContent();
+        backdrop.classList.remove('hidden');
+        void backdrop.offsetWidth;
+        sidebarFrame = requestAnimationFrame(() => {
+          sidebarFrame = null;
+          drawer.classList.remove('translate-x-full');
+          backdrop.classList.add('sidebar-backdrop-visible');
+        });
       } else {
         drawer.classList.add('translate-x-full');
-        setTimeout(() => backdrop.classList.add('hidden'), 300);
+        backdrop.classList.remove('sidebar-backdrop-visible');
+        sidebarCloseTimer = setTimeout(() => {
+          if (drawer.classList.contains('translate-x-full')) backdrop.classList.add('hidden');
+        }, 480);
       }
     }
 
@@ -914,8 +1167,16 @@
       }
     }
 
+    function updateDesktopNavigation() {
+      document.querySelectorAll('#desktop-nav .nav-btn').forEach(button => {
+        button.classList.toggle('is-active', button.dataset.view === appState.currentView);
+      });
+      applyHeaderColorMode(document.body.classList.contains('dark-mode'));
+    }
+
     function switchView(viewName, param = null) {
       appState.currentView = viewName;
+      updateDesktopNavigation();
       if (param !== null) appState.selectedProductId = param;
 
       document.querySelectorAll('.app-view').forEach(el => el.classList.add('hidden'));
@@ -924,6 +1185,9 @@
       if (targetView) {
         targetView.classList.remove('hidden');
         renderViewContent(viewName);
+        targetView.classList.remove('page-opening');
+        void targetView.offsetWidth;
+        targetView.classList.add('page-opening');
       }
 
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1097,24 +1361,141 @@
       grid.innerHTML = html;
     }
 
+    let sliderAutoAdvanceTimer = null;
+    let sliderRenderToken = 0;
+    let sliderTransitionDirection = 1;
+
+    function changeSlide(direction) {
+      const slides = appState.slides || [];
+      if (slides.length < 2) return;
+      sliderTransitionDirection = direction < 0 ? -1 : 1;
+      appState.currentSlideIdx = (appState.currentSlideIdx + direction + slides.length) % slides.length;
+      renderSlider();
+    }
+
+    function goToSlide(index) {
+      if (index === appState.currentSlideIdx) return;
+      sliderTransitionDirection = index < appState.currentSlideIdx ? -1 : 1;
+      appState.currentSlideIdx = index;
+      renderSlider();
+    }
+
+    function startSliderAutoAdvance() {
+      if (sliderAutoAdvanceTimer) window.clearInterval(sliderAutoAdvanceTimer);
+      sliderAutoAdvanceTimer = window.setInterval(() => {
+        if (appState.currentView === 'home' && (appState.slides || []).length > 1) changeSlide(1);
+      }, 5000);
+    }
+
+    function toggleTheme() {
+      const isDark = document.body.classList.toggle('dark-mode');
+      try { localStorage.setItem('clovs_color_mode', isDark ? 'dark' : 'light'); } catch (error) { console.warn('Could not save color mode', error); }
+      updateThemeToggle(isDark);
+    }
+
+    function applyHeaderColorMode(isDark) {
+      const header = document.querySelector('header');
+      const nav = document.getElementById('desktop-nav');
+      const setOrClear = (element, property, value) => {
+        if (!element) return;
+        if (isDark && value) element.style.setProperty(property, value, 'important');
+        else element.style.removeProperty(property);
+      };
+      setOrClear(header, 'background-color', '#0b1220');
+      setOrClear(header, 'border-color', '#344258');
+      setOrClear(nav, 'background-color', '#101d2d');
+      setOrClear(nav, 'border-color', '#33465a');
+      document.querySelectorAll('header > div button').forEach(item => {
+        if (item.classList.contains('nav-btn') || item.closest('#desktop-nav') || item.closest('#header-auth-action')) return;
+        setOrClear(item, 'background-color', '#1c2b3d');
+        setOrClear(item, 'color', '#f1f5f9');
+        setOrClear(item, 'border-color', '#344258');
+      });
+      const dropdown = document.getElementById('user-dropdown-menu');
+      setOrClear(dropdown, 'background-color', '#172234');
+      setOrClear(dropdown, 'border-color', '#344258');
+    }
+
+    function updateThemeToggle(isDark) {
+      applyHeaderColorMode(isDark);
+      const button = document.getElementById('theme-toggle');
+      const icon = document.getElementById('theme-toggle-icon');
+      if (!button || !icon) return;
+      // Moon means switch to night mode; sun means switch back to light mode.
+      icon.className = `fa-solid ${isDark ? 'fa-sun text-amber-400' : 'fa-moon text-amber-500'} text-base sm:text-lg`;
+      button.title = isDark ? 'تفعيل الوضع النهاري' : 'تفعيل الوضع الليلي';
+      button.setAttribute('aria-label', button.title);
+    }
+
+    function applySavedColorMode() {
+      let mode = 'light';
+      try { mode = localStorage.getItem('clovs_color_mode') || 'light'; } catch (error) {}
+      const isDark = mode === 'dark';
+      document.body.classList.toggle('dark-mode', isDark);
+      updateThemeToggle(isDark);
+    }
+
     function renderSlider() {
       const container = document.getElementById('slider-container');
       const dotsContainer = document.getElementById('slider-dots');
       const slides = appState.slides;
       if (!slides || slides.length === 0) return;
 
+      appState.currentSlideIdx = Math.max(0, Math.min(Number(appState.currentSlideIdx) || 0, slides.length - 1));
       const current = slides[appState.currentSlideIdx] || slides[0];
-      
-      container.innerHTML = `<img src="${current.image}" class="w-full h-full object-cover opacity-60" onerror="this.src='https://placehold.co/1200x500/0f172a/ffffff?text=Clovs'">`;
+      if (!container || !dotsContainer || !current) return;
 
-      document.getElementById('slide-tag').innerText = current.tag;
-      document.getElementById('slide-title').innerText = current.title;
-      document.getElementById('slide-desc').innerText = current.desc;
+      const imageUrl = current.image || 'https://placehold.co/1200x500/0f172a/ffffff?text=Clovs';
+      const activeImage = container.querySelector('.slider-image.is-current');
+      if (!activeImage || activeImage.dataset.slideImage !== imageUrl) {
+        const token = ++sliderRenderToken;
+        container.querySelectorAll('.slider-image:not(.is-current)').forEach(image => image.remove());
+        const incoming = new Image();
+        incoming.className = 'slider-image';
+        incoming.alt = '';
+        incoming.dataset.slideImage = imageUrl;
+        const moving = Boolean(activeImage) && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const direction = sliderTransitionDirection;
+        incoming.style.opacity = moving ? '0' : '.6';
+        incoming.style.transform = moving ? `translateX(${direction * 9}%) scale(1.03)` : 'translateX(0) scale(1)';
+        let shown = false;
+        const reveal = () => {
+          if (shown || token !== sliderRenderToken || !incoming.isConnected) return;
+          shown = true;
+          incoming.classList.add('is-current');
+          if (activeImage && activeImage.isConnected && moving) {
+            void incoming.offsetWidth;
+            requestAnimationFrame(() => {
+              incoming.style.opacity = '.6';
+              incoming.style.transform = 'translateX(0) scale(1)';
+              activeImage.style.opacity = '0';
+              activeImage.style.transform = `translateX(${-direction * 9}%) scale(1.03)`;
+            });
+            setTimeout(() => activeImage.remove(), 730);
+          } else {
+            if (activeImage) activeImage.remove();
+            incoming.style.opacity = '.6';
+            incoming.style.transform = 'translateX(0) scale(1)';
+          }
+        };
+        incoming.addEventListener('load', reveal, { once: true });
+        incoming.onerror = () => {
+          incoming.onerror = null;
+          incoming.src = 'https://placehold.co/1200x500/0f172a/ffffff?text=Clovs';
+        };
+        container.appendChild(incoming);
+        incoming.src = imageUrl;
+        if (incoming.complete && incoming.naturalWidth) reveal();
+      }
+
+      document.getElementById('slide-tag').innerText = current.tag || '';
+      document.getElementById('slide-title').innerText = current.title || '';
+      document.getElementById('slide-desc').innerText = current.desc || '';
 
       let dotsHtml = '';
       slides.forEach((_, idx) => {
         const active = idx === appState.currentSlideIdx ? 'w-8 bg-brand-500' : 'w-2 bg-white/50';
-        dotsHtml += `<button onclick="appState.currentSlideIdx = ${idx}; renderSlider();" class="h-2 rounded-full transition-all duration-300 ${active}"></button>`;
+        dotsHtml += `<button onclick="goToSlide(${idx})" class="h-2 rounded-full transition-all duration-300 ${active}"></button>`;
       });
       dotsContainer.innerHTML = dotsHtml;
     }
@@ -1676,22 +2057,53 @@
 
     async function handleLogin(e) {
       e.preventDefault();
-      const u = document.getElementById('login-username').value.trim();
+      const identity = document.getElementById('login-username').value.trim();
       const password = document.getElementById('login-password').value;
 
-      const user = appState.usersList.find(x => x.username === u && x.password === password.trim() && x.role === 'marketer');
-      if (!user) {
-        showToast('بيانات المسوق غير صحيحة. فريق الإدارة يستخدم رابط الدخول آخر القائمة.', 'error');
+      // Existing in-memory accounts can still sign in by their old username during this session.
+      if (!identity.includes('@')) {
+        const legacyUser = appState.usersList.find(user =>
+          !user.firebaseMarketer && user.role === 'marketer' &&
+          user.username?.toLowerCase() === identity.toLowerCase() && user.password === password
+        );
+        if (!legacyUser || legacyUser.status !== 'approved') {
+          showToast('بيانات الدخول غير صحيحة. الحسابات الجديدة تدخل بالبريد الإلكتروني.', 'error');
+          return;
+        }
+        appState.currentUser = legacyUser;
+        updateHeaderAuthUI();
+        showToast(`مرحباً بك مجدداً يا ${legacyUser.name}!`);
+        switchView('home');
         return;
       }
-      if (user.status !== 'approved') {
-        showToast('حسابك قيد مراجعة وتفعيل الإدارة حالياً', 'error');
-        return;
+
+      const button = e.target.querySelector('button[type="submit"]');
+      marketerLoginInProgress = true;
+      button.disabled = true;
+      let signedInUser = null;
+      try {
+        const credential = await firebaseAuth.signInWithEmailAndPassword(identity.toLowerCase(), password);
+        signedInUser = credential.user;
+        const snapshot = await marketerProfilesRef.child(credential.user.uid).once('value');
+        const profile = snapshot.val();
+        if (!profile || profile.role !== 'marketer' || profile.status !== 'approved') {
+          await firebaseAuth.signOut();
+          showToast('حساب الفريق يدخل من بوابة فريق الإدارة، أو أن حساب المسوق غير مفعل.', 'error');
+          return;
+        }
+        setFirebaseMarketerSession(credential.user, profile);
+        showToast(`مرحباً بك مجدداً يا ${profile.name}!`);
+        switchView('home');
+      } catch (error) {
+        console.error('[Clovs Firebase] marketer sign in failed:', error);
+        if (signedInUser && firebaseAuth.currentUser?.uid === signedInUser.uid) {
+          try { await firebaseAuth.signOut(); } catch (signOutError) { console.error(signOutError); }
+        }
+        showToast('تعذر تسجيل الدخول. تأكد من البريد الإلكتروني وكلمة المرور واتصال الموقع.', 'error');
+      } finally {
+        marketerLoginInProgress = false;
+        button.disabled = false;
       }
-      appState.currentUser = user;
-      updateHeaderAuthUI();
-      showToast(`مرحباً بك مجدداً يا ${user.name}!`);
-      switchView('home');
     }
 
     async function handleStaffLogin(e) {
@@ -1735,41 +2147,101 @@
         throw new Error('unauthorized-staff');
       }
       if (role === 'super_admin') startStaffRolesSync();
+      if (role === 'super_admin' || role === 'admin') startMarketerProfilesSync();
       showToast('تم تسجيل دخول فريق الموقع عبر Firebase');
       switchView(role === 'super_admin' ? 'super-customizer' : role === 'admin' ? 'admin-dashboard' : 'product-manager');
     }
 
-    function handleRegister(e) {
+    async function handleRegister(e) {
       e.preventDefault();
       const name = document.getElementById('reg-name').value.trim();
-      const phone = document.getElementById('reg-phone')?.value.trim() || '';
+      const phone = document.getElementById('reg-phone').value.trim();
       const username = document.getElementById('reg-username').value.trim();
-      const password = document.getElementById('reg-password').value.trim();
+      const email = document.getElementById('reg-email').value.trim().toLowerCase();
+      const password = document.getElementById('reg-password').value;
       const role = document.getElementById('reg-role').value;
-
-      if (appState.usersList.some(u => u.username === username) || appState.registrationRequests.some(r => r.username === username)) {
-        showToast('اسم المستخدم مستخدم مسبقاً، اختر اسماً آخر', 'error');
+      const usernameKey = username.toLowerCase();
+      if (role !== 'marketer' || !name || !email || !/^[a-z0-9_]{3,24}$/.test(usernameKey)) {
+        showToast('أدخل بيانات صحيحة واسم مستخدم من 3 إلى 24 حرفاً إنجليزياً أو رقماً.', 'error');
+        return;
+      }
+      if (password.trim().length < 8) {
+        showToast('كلمة المرور لازم تكون 8 أحرف أو أرقام على الأقل.', 'error');
+        document.getElementById('reg-password').focus();
+        return;
+      }
+      if (appState.usersList.some(user => user.username?.toLowerCase() === usernameKey || user.email?.toLowerCase() === email) ||
+          appState.registrationRequests.some(request => request.username?.toLowerCase() === usernameKey || request.email?.toLowerCase() === email)) {
+        showToast('البريد الإلكتروني أو اسم المستخدم مستخدم مسبقاً.', 'error');
         return;
       }
 
-      if (role === 'marketer') {
-        const newUser = {
-          id: 'USR-' + Math.floor(1000 + Math.random() * 9000),
-          name, phone, username, password, role: 'marketer', status: 'approved', balance: 0, payoutDetails: ''
+      const button = e.target.querySelector('button[type="submit"]');
+      button.disabled = true;
+      button.innerText = 'جاري إنشاء الحساب...';
+      marketerRegistrationInProgress = true;
+      let authUser = null;
+      let usernameReserved = false;
+      let profileSaved = false;
+      let cleanupFailed = false;
+      const usernameRef = marketerUsernamesRef.child(usernameKey);
+      try {
+        const credential = await firebaseAuth.createUserWithEmailAndPassword(email, password);
+        authUser = credential.user;
+        const result = await usernameRef.transaction(
+          current => current == null ? authUser.uid : undefined, undefined, false
+        );
+        if (!result.committed) {
+          const conflict = new Error('username-taken');
+          conflict.code = 'username-taken';
+          throw conflict;
+        }
+        usernameReserved = true;
+        const profile = {
+          name, phone, email, username, usernameKey, role: 'marketer',
+          status: 'approved', balance: 0, payoutDetails: '',
+          createdAt: firebase.database.ServerValue.TIMESTAMP
         };
-        appState.usersList.push(newUser);
-        appState.currentUser = newUser;
-        updateHeaderAuthUI();
-        showToast('تم تسجيل حساب المسوق وتفعيله فوراً بنجاح!');
+        await marketerProfilesRef.child(authUser.uid).set(profile);
+        profileSaved = true;
+        setFirebaseMarketerSession(authUser, profile);
+        e.target.reset();
+        showToast('تم إنشاء حساب المسوق وتفعيله بنجاح!');
         switchView('home');
-      } else {
-        const newReq = {
-          id: 'REQ-' + Math.floor(1000 + Math.random() * 9000),
-          name, phone, username, password, role
-        };
-        appState.registrationRequests.push(newReq);
-        openModal('تم تقديم طلب التسجيل', 'تم إرسال طلبك بنجاح للمدير الأساسي للمراجعة والتفعيل. ستتمكن من الدخول فور موافقة الإدارة.', 'fa-clock');
-        switchAuthTab('login');
+      } catch (error) {
+        console.error('[Clovs Firebase] marketer registration failed:', error);
+        if (authUser && !profileSaved) {
+          if (usernameReserved) {
+            try {
+              await usernameRef.transaction(
+                current => current === authUser.uid ? null : undefined, undefined, false
+              );
+            } catch (cleanupError) {
+              cleanupFailed = true;
+              console.error('[Clovs Firebase] username cleanup failed:', cleanupError);
+            }
+          }
+          try { await authUser.delete(); }
+          catch (cleanupError) {
+            cleanupFailed = true;
+            console.error('[Clovs Firebase] new auth account cleanup failed:', cleanupError);
+            if (firebaseAuth.currentUser?.uid === authUser.uid) await firebaseAuth.signOut();
+          }
+        }
+        const message = cleanupFailed
+          ? 'تعذر إكمال التسجيل؛ تواصل مع إدارة الموقع لاستعادة البريد أو اسم المستخدم.'
+          : error.code === 'auth/email-already-in-use'
+            ? 'هذا البريد الإلكتروني مسجل بالفعل. سجل الدخول أو استخدم بريداً آخر.'
+            : error.code === 'username-taken'
+              ? 'اسم المستخدم مستخدم بالفعل. اختر اسماً آخر.'
+              : error.code === 'auth/weak-password'
+                ? 'كلمة المرور غير مقبولة. استخدم 8 أحرف أو أرقام على الأقل.'
+                : 'تعذر إنشاء الحساب. تأكد من اتصال Firebase وصلاحيات التسجيل في قاعدة البيانات.';
+        showToast(message, 'error');
+      } finally {
+        marketerRegistrationInProgress = false;
+        button.disabled = false;
+        button.innerText = 'إنشاء الحساب الآن';
       }
     }
 
@@ -2541,12 +3013,12 @@
             <td class="py-3 px-3 text-slate-600 font-mono">${u.phone || 'غير مسجل'}</td>
             <td class="py-3 px-3"><span class="px-2.5 py-1 rounded-full text-[11px] font-black ${roleBadgeColor}">${roleName}</span></td>
             <td class="py-3 px-3">${balanceDisplay}</td>
-            <td class="py-3 px-3 font-mono font-bold text-slate-800 bg-slate-50 px-2 rounded-lg">${u.firebaseStaff ? 'Firebase Auth' : u.password}</td>
+            <td class="py-3 px-3 font-mono font-bold text-slate-800 bg-slate-50 px-2 rounded-lg">${u.firebaseStaff || u.firebaseMarketer ? 'Firebase Auth' : (u.password || '—')}</td>
             <td class="py-3 px-3 flex items-center gap-2">
               <button onclick="editUserModal('${u.id}')" class="bg-brand-50 hover:bg-brand-600 text-brand-700 hover:text-white font-bold px-3 py-1.5 rounded-xl transition text-xs flex items-center gap-1">
                 <i class="fa-solid fa-user-pen"></i> تحكم وتعديل
               </button>
-              ${!isSuper && !u.firebaseStaff ? `
+              ${!isSuper && !u.firebaseStaff && !u.firebaseMarketer ? `
                 <button onclick="deleteUser('${u.id}')" class="bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white font-bold px-2.5 py-1.5 rounded-xl transition text-xs" title="حذف الحساب">
                   <i class="fa-solid fa-trash-can"></i>
                 </button>
@@ -3006,8 +3478,8 @@
     function editUserModal(userId) {
       const user = appState.usersList.find(u => u.id === userId);
       if (!user) return;
-      if (user.firebaseStaff) {
-        showToast('بيانات الفريق تُدار من Firebase Authentication', 'info');
+      if (user.firebaseStaff || user.firebaseMarketer) {
+        showToast('بيانات هذا الحساب تُدار من Firebase Authentication', 'info');
         return;
       }
 
@@ -3100,13 +3572,13 @@
       const balance = parseFloat(document.getElementById('edit-user-balance')?.value) || 0;
       const payoutDetails = document.getElementById('edit-user-payout')?.value.trim();
 
-      if (!name || !username || !password) {
-        showToast('يرجى ملء الاسم واسم المستخدم وكلمة المرور', 'error');
+      if (!name || !username || password.length < 8) {
+        showToast('يرجى ملء البيانات وكلمة مرور لا تقل عن 8 أحرف أو أرقام', 'error');
         return;
       }
 
       // Check username collision with other users
-      const exists = appState.usersList.some(u => u.id !== userId && u.username === username);
+      const exists = appState.usersList.some(u => u.id !== userId && u.username?.toLowerCase() === username.toLowerCase());
       if (exists) {
         showToast('اسم المستخدم هذا مستخدم مسبقاً من حساب آخر', 'error');
         return;
@@ -3282,6 +3754,8 @@
     }
 
     window.onload = function() {
+      applySavedColorMode();
+      startSliderAutoAdvance();
       applyThemeToDOM();
       updateHeaderAuthUI();
       updateFavBadge();
