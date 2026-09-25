@@ -187,7 +187,7 @@
     .app-view.page-opening:not(.hidden) { animation:gentleViewEnter .55s cubic-bezier(.2,.7,.25,1) both; }
     .product-card img { transition:transform .45s cubic-bezier(.2,.7,.25,1); }
     .product-card:hover img { transform:scale(1.06); }
-    #slider-container .slider-image { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:.6; transition:transform .7s cubic-bezier(.2,.7,.25,1), opacity .7s ease; }
+    #slider-container .slider-image { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:.6; }
     #home-hero .slider-arrow:hover { transform:translateY(-50%) scale(1.08); background-color:rgba(15,23,42,.85); }
     #slider-dots button:hover { transform:scale(1.18); }
     #view-home .home-feature-card { transition:transform .25s ease, box-shadow .25s ease; }
@@ -219,12 +219,14 @@
       #header-actions { width:100%; justify-content:center; gap:.65rem; }
       #header-actions > button, #header-auth-action > button { min-width:42px; min-height:42px; justify-content:center; }
       #toast-container { left:.625rem; right:.625rem; width:auto; }
-      #home-hero { min-height:535px; }
+      #home-hero { min-height:480px; }
+      #home-hero #slider-container .slider-image { object-position:center; }
+      #home-hero > .bg-gradient-to-t { padding:1.25rem 1.1rem 4.5rem; }
       #home-hero #slide-title { font-size:clamp(1.45rem, 7vw, 2rem); line-height:1.35; }
       #home-hero #slide-cta { gap:.5rem; padding-top:.5rem; }
       #home-hero #slide-cta button { padding:.65rem .9rem; font-size:.75rem; }
-      #home-hero .slider-arrow { width:36px; height:36px; top:35%; }
-      #slider-dots { top:1rem; bottom:auto; left:1rem; }
+      #home-hero .slider-arrow { width:36px; height:36px; top:auto !important; bottom:.75rem; transform:none !important; }
+      #slider-dots { top:auto; bottom:1.65rem; left:50%; transform:translateX(-50%); }
       #view-auth > div, #view-staff-login > div { padding:1.25rem; }
       .app-view > .bg-white { padding:1.25rem; }
     }
@@ -338,6 +340,11 @@
           <i class="fa-solid fa-cart-shopping text-brand-600 text-base sm:text-lg"></i>
           <span class="hidden md:inline">السلة</span>
           <span id="cart-badge" class="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 rounded-full bg-action-500 text-white text-[10px] font-black flex items-center justify-center shadow-md">0</span>
+        </button>
+
+        <button id="admin-order-bell" onclick="switchView('admin-dashboard')" class="hidden relative p-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition" title="الأوردرات الجديدة" aria-label="الأوردرات الجديدة">
+          <i class="fa-solid fa-bell text-brand-600 text-base sm:text-lg"></i>
+          <span id="admin-order-badge" class="hidden absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 rounded-full bg-rose-500 text-white text-[10px] font-black items-center justify-center shadow-md"></span>
         </button>
 
         <!-- Profile Avatar / Login Button -->
@@ -749,6 +756,11 @@
     const staffRolesRef = firebaseDB.ref('staffRoles');
     const marketerProfilesRef = firebaseDB.ref('marketerProfiles');
     const marketerUsernamesRef = firebaseDB.ref('marketerUsernames');
+    const ordersRef = firebaseDB.ref('orders');
+    let ordersListenerRef = null;
+    let ordersListenerCallback = null;
+    let ordersListenerUid = null;
+    let knownOrderKeys = null;
     let firebaseProductsListenerStarted = false;
     let staffRolesListenerStarted = false;
     let currentStaffRoleRef = null;
@@ -769,6 +781,7 @@
       appState.currentUser = staff;
       updateHeaderAuthUI();
       updateSidebarContent();
+      startOrdersSync(authUser, role);
       return true;
     }
 
@@ -822,6 +835,7 @@
       appState.currentUser = user;
       updateHeaderAuthUI();
       updateSidebarContent();
+      startOrdersSync(authUser, 'marketer');
       return true;
     }
 
@@ -837,6 +851,66 @@
         appState.usersList = appState.usersList.filter(user => !user.firebaseMarketer).concat(profiles);
         if (appState.currentView === 'super-customizer') renderSuperCustomizerView();
       }, error => console.error('[Clovs Firebase] marketer list read failed:', error));
+    }
+
+    function updateAdminOrderBadge() {
+      const bell = document.getElementById('admin-order-bell');
+      const badge = document.getElementById('admin-order-badge');
+      if (!bell || !badge) return;
+      const isAdmin = ['admin', 'super_admin'].includes(appState.currentUser?.role);
+      bell.classList.toggle('hidden', !isAdmin);
+      if (!isAdmin) return;
+      const seen = Number(localStorage.getItem(`clovs_orders_seen_${firebaseAuth.currentUser?.uid}`) || 0);
+      const count = appState.orders.filter(order => Number(order.createdAt) > seen).length;
+      badge.textContent = count > 99 ? '99+' : String(count);
+      badge.classList.toggle('hidden', count === 0);
+      badge.classList.toggle('flex', count > 0);
+    }
+
+    function markAdminOrdersSeen() {
+      if (!['admin', 'super_admin'].includes(appState.currentUser?.role)) return;
+      const latest = Math.max(Date.now(), ...appState.orders.map(order => Number(order.createdAt) || 0));
+      localStorage.setItem(`clovs_orders_seen_${firebaseAuth.currentUser.uid}`, String(latest));
+      updateAdminOrderBadge();
+    }
+
+    function stopOrdersSync() {
+      if (ordersListenerRef && ordersListenerCallback) ordersListenerRef.off('value', ordersListenerCallback);
+      ordersListenerRef = null;
+      ordersListenerCallback = null;
+      ordersListenerUid = null;
+      knownOrderKeys = null;
+      appState.orders = [];
+      updateAdminOrderBadge();
+    }
+
+    function startOrdersSync(authUser, role) {
+      if (ordersListenerUid === authUser.uid && ordersListenerRef) return;
+      stopOrdersSync();
+      ordersListenerUid = authUser.uid;
+      const isAdmin = role === 'admin' || role === 'super_admin';
+      const ref = isAdmin ? ordersRef : ordersRef.orderByChild('marketerUid').equalTo(authUser.uid);
+      ordersListenerRef = ref;
+      ordersListenerCallback = snapshot => {
+        const raw = snapshot.val() || {};
+        const keys = new Set(Object.keys(raw));
+        if (isAdmin && knownOrderKeys) {
+          const incoming = [...keys].filter(key => !knownOrderKeys.has(key));
+          if (incoming.length) showToast(`وصل ${incoming.length} أوردر جديد إلى لوحة الإدارة`);
+        }
+        knownOrderKeys = keys;
+        appState.orders = Object.entries(raw).map(([firebaseKey, order]) => ({
+          ...order, firebaseKey
+        })).sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
+        updateAdminOrderBadge();
+        if (appState.currentView === 'admin-dashboard') renderAdminDashboard();
+        if (appState.currentView === 'marketer-dashboard') renderMarketerDashboard();
+      };
+      ref.on('value', ordersListenerCallback, error => {
+        console.error('[Clovs Firebase] orders read failed:', error);
+        showToast('تعذر تحميل الأوردرات. أضف قواعد orders إلى Firebase.', 'error');
+      });
+      updateAdminOrderBadge();
     }
 
     firebaseAuth.onAuthStateChanged(async (authUser) => {
@@ -876,10 +950,12 @@
           showToast('تعذر التحقق من الحساب. راجع اتصال Firebase وقواعد قاعدة البيانات.', 'error');
         }
       } else {
+        stopOrdersSync();
         if (appState.currentUser?.firebaseStaff || appState.currentUser?.firebaseMarketer) {
           appState.currentUser = null;
           updateHeaderAuthUI();
           updateSidebarContent();
+          updateAdminOrderBadge();
           if (['super-customizer', 'admin-dashboard', 'product-manager', 'marketer-dashboard', 'marketer-withdraw'].includes(appState.currentView)) switchView('home');
         }
         if (staffRolesListenerStarted) {
@@ -1185,6 +1261,7 @@
       if (targetView) {
         targetView.classList.remove('hidden');
         renderViewContent(viewName);
+        if (viewName === 'admin-dashboard') markAdminOrdersSeen();
         targetView.classList.remove('page-opening');
         void targetView.offsetWidth;
         targetView.classList.add('page-opening');
@@ -1449,41 +1526,20 @@
       const activeImage = container.querySelector('.slider-image.is-current');
       if (!activeImage || activeImage.dataset.slideImage !== imageUrl) {
         const token = ++sliderRenderToken;
-        container.querySelectorAll('.slider-image:not(.is-current)').forEach(image => image.remove());
         const incoming = new Image();
         incoming.className = 'slider-image';
         incoming.alt = '';
         incoming.dataset.slideImage = imageUrl;
-        const moving = Boolean(activeImage) && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        const direction = sliderTransitionDirection;
-        incoming.style.opacity = moving ? '0' : '.6';
-        incoming.style.transform = moving ? `translateX(${direction * 9}%) scale(1.03)` : 'translateX(0) scale(1)';
-        let shown = false;
         const reveal = () => {
-          if (shown || token !== sliderRenderToken || !incoming.isConnected) return;
-          shown = true;
+          if (token !== sliderRenderToken) return;
+          container.replaceChildren(incoming);
           incoming.classList.add('is-current');
-          if (activeImage && activeImage.isConnected && moving) {
-            void incoming.offsetWidth;
-            requestAnimationFrame(() => {
-              incoming.style.opacity = '.6';
-              incoming.style.transform = 'translateX(0) scale(1)';
-              activeImage.style.opacity = '0';
-              activeImage.style.transform = `translateX(${-direction * 9}%) scale(1.03)`;
-            });
-            setTimeout(() => activeImage.remove(), 730);
-          } else {
-            if (activeImage) activeImage.remove();
-            incoming.style.opacity = '.6';
-            incoming.style.transform = 'translateX(0) scale(1)';
-          }
         };
         incoming.addEventListener('load', reveal, { once: true });
         incoming.onerror = () => {
           incoming.onerror = null;
           incoming.src = 'https://placehold.co/1200x500/0f172a/ffffff?text=Clovs';
         };
-        container.appendChild(incoming);
         incoming.src = imageUrl;
         if (incoming.complete && incoming.naturalWidth) reveal();
       }
@@ -1982,9 +2038,15 @@
       reader.readAsDataURL(file);
     }
 
-    function submitOrderCheckout() {
-      if (!appState.currentUser || appState.currentUser.role !== 'marketer') {
+    let orderSubmissionInProgress = false;
+    async function submitOrderCheckout() {
+      if (!appState.currentUser?.firebaseMarketer || !firebaseAuth.currentUser) {
         showToast('يجب تسجيل الدخول كمسوق لإتمام الطلب', 'error');
+        return;
+      }
+      if (orderSubmissionInProgress) return;
+      if (!appState.activeCart.items.length) {
+        showToast('أضف منتجاً إلى السلة أولاً', 'error');
         return;
       }
       const c = appState.activeCart.customer;
@@ -2008,10 +2070,13 @@
         totalCommission += i.commission * i.quantity;
       });
 
+      const orderRef = ordersRef.push();
       const newOrder = {
         id: 'ORD-' + Math.floor(100000 + Math.random() * 900000),
+        marketerUid: firebaseAuth.currentUser.uid,
         marketerId: appState.currentUser.id,
         marketerName: appState.currentUser.name,
+        createdAt: firebase.database.ServerValue.TIMESTAMP,
         date: new Date().toLocaleDateString('ar-EG'),
         items: JSON.parse(JSON.stringify(appState.activeCart.items)),
         customer: { ...c },
@@ -2024,7 +2089,19 @@
         status: 'pending' // 'pending', 'confirmed', 'shipping', 'delivered', 'cancelled', 'returned'
       };
 
-      appState.orders.unshift(newOrder);
+      const button = document.querySelector('button[onclick="submitOrderCheckout()"]');
+      orderSubmissionInProgress = true;
+      if (button) button.disabled = true;
+      try {
+        await orderRef.set(newOrder);
+      } catch (error) {
+        console.error('[Clovs Firebase] order save failed:', error);
+        showToast('تعذر إرسال الأوردر. راجع قواعد orders في Firebase وحاول مجدداً.', 'error');
+        return;
+      } finally {
+        orderSubmissionInProgress = false;
+        if (button) button.disabled = false;
+      }
 
       // Reset active cart
       appState.activeCart.items = [];
@@ -2901,11 +2978,19 @@
       openModal('إيصال التحويل الإلكتروني', `رقم الهاتف المحول منه: ${o.paymentProof.senderPhone || 'غير مسجل'}<br><div class="mt-3 max-h-80 overflow-y-auto rounded-xl"><img src="${o.paymentProof.screenshot}" class="w-full rounded-xl"></div>`);
     }
 
-    function updateOrderStatus(orderId, newStatus) {
+    async function updateOrderStatus(orderId, newStatus) {
       const o = appState.orders.find(x => x.id === orderId);
-      if (!o) return;
+      if (!o?.firebaseKey || !['admin', 'super_admin'].includes(appState.currentUser?.role)) return;
 
       const oldStatus = o.status;
+      try {
+        await ordersRef.child(o.firebaseKey).child('status').set(newStatus);
+      } catch (error) {
+        console.error('[Clovs Firebase] order status update failed:', error);
+        showToast('تعذر حفظ حالة الأوردر في Firebase.', 'error');
+        renderAdminDashboard();
+        return;
+      }
       o.status = newStatus;
 
       const marketer = appState.usersList.find(u => u.id === o.marketerId);
