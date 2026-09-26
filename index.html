@@ -479,7 +479,7 @@
             عرض كل المنتجات <i class="fa-solid fa-arrow-left"></i>
           </button>
         </div>
-        <div id="home-products-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6"></div>
+        <div id="home-products-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 lg:gap-4"></div>
       </div>
     </div>
 
@@ -785,6 +785,7 @@
       },
       socialLinks: { facebook: '', instagram: '', tiktok: '' },
       publicLeaderboard: [],
+      homeFeaturedProducts: null,
       staffRoles: {},
       activeCart: {
         items: [],
@@ -826,6 +827,7 @@
     const slidesRef = firebaseDB.ref('siteSettings/slides');
     const socialLinksRef = firebaseDB.ref('siteSettings/socialLinks');
     const publicLeaderboardRef = firebaseDB.ref('publicLeaderboard');
+    const homeFeaturedProductsRef = firebaseDB.ref('homeFeaturedProducts');
     const categoriesRef = firebaseDB.ref('catalogCategories');
     const shippingRatesRef = firebaseDB.ref('siteSettings/shippingRates');
     const contactInfoRef = firebaseDB.ref('siteSettings/contactInfo');
@@ -1210,7 +1212,22 @@
       });
     }
 
+    function selectedHomeProductIds() {
+      const config = appState.homeFeaturedProducts;
+      if (!config?._configured) return appState.products.slice(0, 5).map(product => product.id);
+      const ranks = config.items && typeof config.items === 'object' ? config.items : {};
+      return Object.entries(ranks)
+        .filter(([id, rank]) => /^[A-Za-z0-9_-]+$/.test(id) && Number.isFinite(Number(rank)))
+        .sort((a, b) => Number(a[1]) - Number(b[1]))
+        .map(([id]) => id);
+    }
+
     function startFirebaseSiteSettingsSync() {
+      homeFeaturedProductsRef.on('value', snapshot => {
+        appState.homeFeaturedProducts = snapshot.val();
+        if (appState.currentView === 'home') renderHomeView();
+        if (appState.currentView === 'product-manager') renderProductManagerDashboard();
+      }, error => console.error('[Clovs Firebase] home product selection read failed:', error));
       publicLeaderboardRef.on('value', snapshot => {
         appState.publicLeaderboard = Object.entries(snapshot.val() || {}).map(([uid, value]) => ({ uid, ...value }));
         if (appState.currentView === 'top-marketers') renderTopMarketersView();
@@ -1652,25 +1669,28 @@
     function renderHomeView() {
       renderSlider();
       const grid = document.getElementById('home-products-grid');
-      if (appState.products.length === 0) {
+      const byId = new Map(appState.products.map(product => [product.id, product]));
+      const homeProducts = selectedHomeProductIds().map(id => byId.get(id)).filter(Boolean);
+      if (homeProducts.length === 0) {
         grid.innerHTML = `
           <div class="col-span-full py-12 text-center bg-white rounded-3xl border border-slate-100">
             <div class="w-16 h-16 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center text-2xl mx-auto mb-3">
               <i class="fa-solid fa-box-open"></i>
             </div>
-            <h4 class="font-bold text-slate-800">لا توجد منتجات معروضة حالياً</h4>
-            <p class="text-slate-500 text-sm mt-1">سيتم إضافة منتجات جديدة قريباً من قبل فريق مضيفي المنتجات.</p>
+            <h4 class="font-bold text-slate-800">لا توجد منتجات على الرئيسية حالياً</h4>
+            <p class="text-slate-500 text-sm mt-1">يمكنك تصفح الكتالوج لعرض كل المنتجات المتاحة.</p>
+            <button type="button" onclick="switchView('products')" class="mt-4 text-brand-700 font-bold text-sm underline">تصفح المنتجات</button>
           </div>
         `;
         return;
       }
 
       let html = '';
-      appState.products.slice(0, 4).forEach(prod => {
+      homeProducts.forEach(prod => {
         const isFav = appState.favorites.includes(prod.id);
         html += `
           <div class="product-card ${productCardClasses(prod)} bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col relative group cursor-pointer" tabindex="0" role="link" aria-label="فتح المنتج: ${escapeHtml(prod.name)}" onclick="switchView('product-details', '${prod.id}')" onkeydown="if(event.target===this && (event.key==='Enter' || event.key===' ')){event.preventDefault();switchView('product-details', '${prod.id}')}">
-            <div class="relative h-48 bg-slate-100 overflow-hidden">
+            <div class="relative h-40 sm:h-44 bg-slate-100 overflow-hidden">
               <img src="${escapeHtml(productMainImage(prod))}" class="product-photo w-full h-full" alt="${escapeHtml(prod.name)}" onerror="this.src='${PRODUCT_PLACEHOLDER}'">
               ${discountBadge(prod)}
               ${productHighlightBadge(prod)}
@@ -1678,9 +1698,9 @@
                 <i class="fa-${isFav ? 'solid' : 'regular'} fa-heart text-sm"></i>
               </button>
             </div>
-            <div class="p-5 flex-1 flex flex-col justify-between space-y-4">
+            <div class="p-4 flex-1 flex flex-col justify-between space-y-3">
               <div class="space-y-1">
-                <h4 class="font-black text-slate-900 text-lg line-clamp-1">${escapeHtml(prod.name)}</h4>
+                <h4 class="font-black text-slate-900 text-base line-clamp-1">${escapeHtml(prod.name)}</h4>
                 <p class="text-slate-500 text-xs line-clamp-2 leading-relaxed">${escapeHtml(prod.desc || '')}</p>
                 ${productPriceHtml(prod)}
               </div>
@@ -3095,6 +3115,33 @@
       openModal('تم تقديم طلب السحب بنجاح', `تم استلام طلب سحب مبلغ ${amount} ج.م وسيتم تنفيذه في موعد التحويلات القادم (الاثنين أو الجمعة).`);
     }
 
+    let savingHomeFeaturedProducts = false;
+    async function saveHomeFeaturedProducts() {
+      if (!['product_manager', 'admin', 'super_admin'].includes(appState.currentUser?.role) ||
+          !firebaseAuth.currentUser || savingHomeFeaturedProducts) return;
+      const selected = [...document.querySelectorAll('[data-home-featured-select]:checked')].map(input => input.value);
+      if (selected.length > 50) return showToast('اختار حتى 50 منتجاً للرئيسية للحفاظ على سرعة الصفحة.', 'error');
+      if (selected.some(id => !appState.products.some(product => product.id === id))) {
+        return showToast('اتغيرت قائمة المنتجات؛ حدّث الصفحة وحاول تاني.', 'error');
+      }
+      const button = document.querySelector('button[onclick="saveHomeFeaturedProducts()"]');
+      savingHomeFeaturedProducts = true;
+      if (button) button.disabled = true;
+      try {
+        await homeFeaturedProductsRef.set({
+          _configured: true,
+          items: Object.fromEntries(selected.map((id, index) => [id, index + 1]))
+        });
+        showToast('اتحفظ اختيار منتجات الرئيسية بنجاح');
+      } catch (error) {
+        console.error('[Clovs Firebase] home product selection save failed:', error);
+        showToast('تعذر حفظ اختيارات الرئيسية. راجع قواعد homeFeaturedProducts وصلاحيات الحساب.', 'error');
+      } finally {
+        savingHomeFeaturedProducts = false;
+        if (button) button.disabled = false;
+      }
+    }
+
     function renderProductManagerDashboard() {
       const container = document.getElementById('view-product-manager');
       const user = appState.currentUser;
@@ -3102,7 +3149,7 @@
 
       let pRows = '';
       if (appState.products.length === 0) {
-        pRows = `<tr><td colspan="7" class="text-center py-6 text-slate-400 text-sm">لا توجد منتجات في الكتالوج حالياً.</td></tr>`;
+        pRows = `<tr><td colspan="8" class="text-center py-6 text-slate-400 text-sm">لا توجد منتجات في الكتالوج حالياً.</td></tr>`;
       } else {
         appState.products.forEach(p => {
           pRows += `
@@ -3116,6 +3163,9 @@
               <td class="py-3 px-4 font-bold text-slate-700">${escapeHtml(p.stock ?? 10)} قطعة</td>
               <td class="py-3 px-4 font-bold text-amber-700">${Number(p.soldCount) || 0}</td>
               <td class="py-3 px-4 text-xs text-slate-500 max-w-xs truncate">${escapeHtml(p.desc || '')}</td>
+              <td class="py-3 px-4 text-center">
+                <input type="checkbox" data-home-featured-select value="${p.id}" ${selectedHomeProductIds().includes(p.id) ? 'checked' : ''} aria-label="اختيار ${escapeHtml(p.name)} للرئيسية" class="w-4 h-4 accent-emerald-600 cursor-pointer">
+              </td>
               <td class="py-3 px-4 flex gap-2">
                 <button onclick="editProductModal('${p.id}')" class="text-brand-600 hover:text-brand-800 p-2 font-bold text-xs"><i class="fa-solid fa-pen-to-square"></i> تعديل</button>
                 <button onclick="deleteProduct('${p.id}')" class="text-rose-500 hover:text-rose-700 p-2 font-bold text-xs"><i class="fa-solid fa-trash"></i> حذف</button>
@@ -3141,7 +3191,7 @@
         <div class="bg-white p-6 rounded-3xl border border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4">
           <div>
             <h2 class="text-2xl font-black text-slate-900">إدارة كتالوج المنتجات والتصنيفات</h2>
-            <p class="text-slate-500 text-sm">أضف المنتجات، حدد تصنيفاتها وأسعارها الأساسية، وقم برفع الصور بسهولة.</p>
+            <p class="text-slate-500 text-sm">أضف المنتجات وصورها وأسعارها، واختار اللي يظهر منها على الصفحة الرئيسية.</p>
           </div>
           <div class="flex items-center gap-2">
             <button onclick="openAddProductModal()" class="bg-brand-600 hover:bg-brand-700 text-white font-bold px-6 py-3 rounded-2xl shadow-lg shadow-brand-600/20 text-sm flex items-center gap-2">
@@ -3168,7 +3218,13 @@
         </div>
 
         <div class="bg-white p-6 rounded-3xl border border-slate-100 space-y-4">
-          <h3 class="font-black text-slate-900 text-lg">المنتجات الحالية المعروضة على المنصة</h3>
+          <div class="flex flex-wrap gap-3 items-center justify-between">
+            <div>
+              <h3 class="font-black text-slate-900 text-lg">اختيار منتجات الصفحة الرئيسية</h3>
+              <p class="text-slate-500 text-xs">علّم المنتجات المطلوبة ثم اضغط حفظ. المنتجات الأخرى تظل في الكتالوج. الحد الأقصى 50 منتجاً.</p>
+            </div>
+            <button type="button" onclick="saveHomeFeaturedProducts()" class="bg-brand-600 hover:bg-brand-700 text-white font-bold px-4 py-2 rounded-xl text-sm">حفظ اختيارات الرئيسية</button>
+          </div>
           <div class="overflow-x-auto">
             <table class="w-full text-right">
               <thead>
@@ -3179,6 +3235,7 @@
                   <th class="py-3 px-4">المخزون</th>
                   <th class="py-3 px-4">تم بيعها</th>
                   <th class="py-3 px-4">الوصف</th>
+                  <th class="py-3 px-4">اختيار للرئيسية</th>
                   <th class="py-3 px-4">الإجراءات</th>
                 </tr>
               </thead>
