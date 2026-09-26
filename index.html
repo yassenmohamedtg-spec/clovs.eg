@@ -101,6 +101,10 @@
     .product-gallery-thumb { border:2px solid transparent; transition:border-color .2s ease, transform .2s ease; }
     .product-gallery-thumb:hover, .product-gallery-thumb.is-active { border-color:#059669; transform:translateY(-2px); }
     .product-card.is-best-seller .product-highlight { animation:highlightPulse 3s ease-in-out infinite; }
+    .contest-hero { background:linear-gradient(130deg,#35250b,#885d11 45%,#d6a83f 100%); box-shadow:0 22px 52px -28px rgba(120,83,15,.75); }
+    .contest-card { background:linear-gradient(145deg,#fffcf1,#fff 65%); border:1px solid #e9cc81; box-shadow:0 16px 38px -25px rgba(123,83,18,.4); }
+    .contest-gold { color:#a16c08; }
+    .contest-progress { accent-color:#c48b19; }
     .product-card:focus-visible { outline:3px solid #059669; outline-offset:3px; }
     @keyframes highlightPulse { 50% { box-shadow:0 0 0 5px rgba(245,158,11,.15); } }
     #modal-box-inner { max-height:min(90dvh, 900px); overflow-y:auto; }
@@ -383,7 +387,7 @@
       </div>
       <button id="firebase-boot-motion-toggle" type="button" aria-pressed="false" onclick="toggleBootMotion()">إيقاف الحركة</button>
       <div class="firebase-boot-progress-row">
-        <progress id="firebase-boot-progress" value="0" max="17" aria-label="تقدم تجهيز الموقع"></progress>
+        <progress id="firebase-boot-progress" value="0" max="18" aria-label="تقدم تجهيز الموقع"></progress>
         <span id="firebase-boot-percent" aria-hidden="true">0%</span>
       </div>
       <h1 id="firebase-boot-title">بنجهز لك Clovs</h1>
@@ -500,6 +504,9 @@
         </button>
         <button onclick="switchView('top-marketers')" class="nav-btn px-4 py-2 rounded-xl text-xs sm:text-sm font-bold text-slate-700 hover:bg-white hover:text-brand-600 transition shadow-none" data-view="top-marketers">
           <i class="fa-solid fa-trophy ml-1 text-xs text-amber-500"></i> أفضل المسوقين
+        </button>
+        <button onclick="switchView('contests')" class="nav-btn px-4 py-2 rounded-xl text-xs sm:text-sm font-black text-amber-800 hover:bg-amber-50 transition" data-view="contests">
+          <i class="fa-solid fa-medal ml-1 text-amber-600"></i> المسابقات
         </button>
       </nav>
 
@@ -774,6 +781,18 @@
     <div id="view-product-manager" class="app-view space-y-6 hidden fade-in"></div>
     <div id="view-admin-dashboard" class="app-view space-y-6 hidden fade-in"></div>
     <div id="view-super-customizer" class="app-view space-y-6 hidden fade-in"></div>
+    <div id="view-contests" class="app-view space-y-6 hidden fade-in">
+      <section class="contest-hero rounded-3xl p-6 sm:p-10 text-white relative overflow-hidden">
+        <div class="relative z-10 max-w-2xl space-y-3">
+          <span class="inline-flex items-center gap-2 rounded-full bg-white/15 border border-white/25 px-4 py-1.5 text-xs font-black"><i class="fa-solid fa-trophy"></i> تحديات Clovs</span>
+          <h2 class="text-3xl sm:text-4xl font-black">المسابقات والجوائز</h2>
+          <p class="text-amber-50 text-sm leading-7">تابع هدف كل مسابقة وأوردراتك المسلّمة خلالها. كل مسوق يصل للهدف يستحق الجائزة المعلنة، وتسليم الجوائز يتم عن طريق الإدارة.</p>
+        </div>
+        <i class="fa-solid fa-medal absolute -left-4 -bottom-8 text-[10rem] text-white/10" aria-hidden="true"></i>
+      </section>
+      <div id="contest-manager"></div>
+      <div id="contest-cards" class="grid grid-cols-1 lg:grid-cols-2 gap-5" aria-live="polite"></div>
+    </div>
 
     <!-- ABOUT: available from the side menu for all visitors -->
     <div id="view-about" class="app-view hidden fade-in">
@@ -904,6 +923,8 @@
         { id: '2', title: 'معاينة مجانية للشحنة وأرباح مضمونة', desc: 'عمولاتك الثابتة تُضاف لرصيدك فور تسليم الأوردر للعميل بنجاح.', tag: 'دفع وسحب آمن', image: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1200&q=80' }
       ],
       shippingRates: DEFAULT_SHIPPING,
+      contests: [],
+      contestsLoaded: false,
       contactInfo: {
         phone: '01020327694',
         email: 'support@clovs.eg',
@@ -959,6 +980,7 @@
     const homeFeaturedProductsRef = firebaseDB.ref('homeFeaturedProducts');
     const categoriesRef = firebaseDB.ref('catalogCategories');
     const shippingRatesRef = firebaseDB.ref('siteSettings/shippingRates');
+    const contestsRef = firebaseDB.ref('siteSettings/contests');
     const contactInfoRef = firebaseDB.ref('siteSettings/contactInfo');
     const brandingRef = firebaseDB.ref('siteSettings/branding');
     const staffRolesRef = firebaseDB.ref('staffRoles');
@@ -1173,6 +1195,7 @@
         updateAdminOrderBadge();
         if (appState.currentView === 'admin-dashboard') renderAdminDashboard();
         if (appState.currentView === 'marketer-dashboard') renderMarketerDashboard();
+        if (appState.currentView === 'contests') renderContestsView();
         firebaseBootReady('orders');
       };
       ref.on('value', ordersListenerCallback, error => {
@@ -1228,7 +1251,7 @@
       });
     }
 
-    const firebaseBootPending = new Set(['auth', 'products', 'slides', 'homeFeaturedProducts', 'categories', 'branding', 'shippingRates', 'contactInfo', 'socialLinks', 'publicLeaderboard']);
+    const firebaseBootPending = new Set(['auth', 'products', 'slides', 'homeFeaturedProducts', 'categories', 'branding', 'shippingRates', 'contests', 'contactInfo', 'socialLinks', 'publicLeaderboard']);
     let firebaseBootExpected = firebaseBootPending.size;
     let firebaseBootStarted = false;
     let firebaseBootFailed = false;
@@ -1479,6 +1502,16 @@
         if (appState.currentView === 'cart') renderCartView();
         firebaseBootReady('shippingRates');
       }, error => { console.error('[Clovs Firebase] shipping read failed:', error); firebaseBootError('shippingRates', error); });
+      contestsRef.on('value', snapshot => {
+        appState.contests = Object.entries(snapshot.val() || {}).map(([firebaseKey, contest]) => ({ ...contest, firebaseKey }))
+          .filter(contest => Number.isFinite(Number(contest.startAt)) && Number(contest.startAt) > 0
+            && Number(contest.endAt) > Number(contest.startAt)
+            && Number(contest.targetOrders) > 0 && Number(contest.prizeAmount) > 0)
+          .sort((a, b) => Number(b.startAt) - Number(a.startAt));
+        appState.contestsLoaded = true;
+        if (appState.currentView === 'contests') renderContestsView();
+        firebaseBootReady('contests');
+      }, error => { console.error('[Clovs Firebase] contests read failed:', error); firebaseBootError('contests', error); });
       contactInfoRef.on('value', snapshot => {
         appState.contactInfo = { ...appState.contactInfo, ...(snapshot.val() || {}) };
         if (appState.currentView === 'contact-support') renderContactSupportView();
@@ -1795,6 +1828,7 @@
       else if (viewName === 'product-manager') renderProductManagerDashboard();
       else if (viewName === 'admin-dashboard') renderAdminDashboard();
       else if (viewName === 'super-customizer') renderSuperCustomizerView();
+      else if (viewName === 'contests') renderContestsView();
       else if (viewName === 'shipping-rates') renderShippingRatesView();
       else if (viewName === 'contact-support') renderContactSupportView();
       else if (viewName === 'social') renderSocialView();
@@ -1831,6 +1865,9 @@
         </button>
         <button onclick="switchView('about')" class="w-full text-right px-4 py-3 rounded-xl font-bold text-slate-700 hover:bg-slate-50 hover:text-brand-600 transition flex items-center gap-3 text-sm">
           <i class="fa-solid fa-circle-info text-brand-600 w-5"></i> حول
+        </button>
+        <button onclick="switchView('contests')" class="w-full text-right px-4 py-3 rounded-xl font-black text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition flex items-center gap-3 text-sm">
+          <i class="fa-solid fa-medal text-amber-600 w-5"></i> المسابقات والجوائز
         </button>
         <button onclick="switchView('shipping-rates')" class="w-full text-right px-4 py-3 rounded-xl font-bold text-slate-700 hover:bg-slate-50 hover:text-brand-600 transition flex items-center gap-3 text-sm">
           <i class="fa-solid fa-truck text-brand-600 w-5"></i> أسعار الشحن والمعاينة
@@ -3896,9 +3933,10 @@
             <p class="text-slate-500 text-sm">متابعة كافة الأوردرات لجميع المحافظات، وتغيير الحالات، وتنفيذ السحوبات.</p>
           </div>
           ${user.role === 'super_admin' ? `
-            <button onclick="switchView('super-customizer')" class="bg-brand-600 hover:bg-brand-700 text-white font-bold px-6 py-3 rounded-2xl shadow-lg shadow-brand-600/20 text-sm flex items-center gap-2">
-              <i class="fa-solid fa-wand-magic-sparkles"></i> تخصيص الموقع والهوية
-            </button>
+            <div class="flex flex-wrap gap-2">
+              <button onclick="switchView('super-customizer')" class="bg-brand-600 hover:bg-brand-700 text-white font-bold px-5 py-3 rounded-2xl text-sm"><i class="fa-solid fa-truck ml-1"></i> تعديل أسعار الشحن</button>
+              <button onclick="switchView('contests')" class="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black px-5 py-3 rounded-2xl text-sm"><i class="fa-solid fa-medal ml-1"></i> إدارة المسابقات</button>
+            </div>
           ` : ''}
         </div>
 
@@ -4018,6 +4056,10 @@
       if (!user || user.role !== 'super_admin') return;
 
       const theme = appState.siteTheme;
+      const shippingInputs = GOVERNORATES.map((gov, index) => `
+        <label class="text-xs font-bold text-slate-700">${escapeHtml(gov)}
+          <input id="shipping-rate-${index}" type="number" min="0" max="1000" step="1" required value="${Number(appState.shippingRates[gov] ?? DEFAULT_SHIPPING[gov])}" class="mt-1 w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm" dir="ltr">
+        </label>`).join('');
 
       let slidesHtml = '';
       appState.slides.forEach((s, idx) => {
@@ -4129,6 +4171,12 @@
             <button onclick="saveContactSettings()" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-2.5 rounded-xl text-sm transition shadow-sm">
               حفظ وتحديث بيانات التواصل
             </button>
+          </div>
+
+          <div class="bg-white p-6 rounded-3xl border border-amber-200 space-y-4 lg:col-span-2">
+            <div><h3 class="font-black text-slate-900 text-lg">أسعار الشحن لكل محافظة</h3><p class="text-xs text-slate-500 mt-1">الأسعار المحفوظة تظهر فورًا في صفحة الشحن والسلة، وتُستخدم للأوردرات الجديدة. الأوردرات القديمة تحتفظ بسعرها المسجّل.</p></div>
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">${shippingInputs}</div>
+            <button id="save-shipping-rates" type="button" onclick="saveShippingRates()" class="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black px-6 py-3 rounded-xl text-sm">حفظ أسعار الشحن في Firebase</button>
           </div>
 
           <div class="bg-white p-6 rounded-3xl border border-slate-100 space-y-4 lg:col-span-2">
@@ -4274,6 +4322,35 @@
       } catch (error) {
         console.error('[Clovs Firebase] branding save failed:', error);
         showToast('فشل حفظ هوية الموقع في Firebase', 'error');
+      }
+    }
+
+    async function saveShippingRates() {
+      if (firebaseAuth.currentUser?.uid !== FIREBASE_ADMIN_UID || appState.currentUser?.role !== 'super_admin') {
+        showToast('تعديل أسعار الشحن للمدير الأساسي فقط', 'error');
+        return;
+      }
+      const rates = {};
+      for (const [index, gov] of GOVERNORATES.entries()) {
+        const input = document.getElementById(`shipping-rate-${index}`);
+        const amount = Number(input?.value);
+        if (!input || input.value.trim() === '' || !Number.isInteger(amount) || amount < 0 || amount > 1000) {
+          showToast(`أدخل سعر شحن صحيحًا لمحافظة ${gov} بين 0 و1000 جنيه`, 'error');
+          input?.focus();
+          return;
+        }
+        rates[gov] = amount;
+      }
+      const button = document.getElementById('save-shipping-rates');
+      if (button) button.disabled = true;
+      try {
+        await shippingRatesRef.set(rates);
+        showToast('تم حفظ أسعار الشحن لجميع المحافظات في Firebase');
+      } catch (error) {
+        console.error('[Clovs Firebase] shipping save failed:', error);
+        showToast('فشل حفظ أسعار الشحن. راجع صلاحية siteSettings في Firebase.', 'error');
+      } finally {
+        if (button) button.disabled = false;
       }
     }
 
@@ -4639,6 +4716,204 @@
       });
 
       listContainer.innerHTML = html;
+    }
+
+    function contestOrderCount(contest, marketerUid) {
+      const start = Number(contest.startAt);
+      const end = Number(contest.endAt);
+      return appState.orders.filter(order => order.status === 'delivered'
+        && order.marketerUid === marketerUid
+        && Number(order.createdAt) >= start && Number(order.createdAt) <= end).length;
+    }
+
+    function contestStandings(contest) {
+      const participants = new Map();
+      appState.orders.forEach(order => {
+        if (order.status !== 'delivered' || !/^[A-Za-z0-9_-]{1,128}$/.test(order.marketerUid || '')
+          || Number(order.createdAt) < Number(contest.startAt) || Number(order.createdAt) > Number(contest.endAt)) return;
+        const current = participants.get(order.marketerUid) || { name: String(order.marketerName || 'مسوق').slice(0, 80), count: 0 };
+        current.count++;
+        participants.set(order.marketerUid, current);
+      });
+      return [...participants.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'ar'));
+    }
+
+    function renderContestsView() {
+      const cards = document.getElementById('contest-cards');
+      const manager = document.getElementById('contest-manager');
+      const owner = firebaseAuth.currentUser?.uid === FIREBASE_ADMIN_UID && appState.currentUser?.role === 'super_admin';
+      const staff = ['super_admin', 'admin'].includes(appState.currentUser?.role);
+      const marketerUid = appState.currentUser?.role === 'marketer' ? firebaseAuth.currentUser?.uid : null;
+      manager.innerHTML = owner ? `<div class="contest-card rounded-2xl p-5 flex flex-wrap items-center justify-between gap-3">
+        <div><h3 class="font-black text-amber-950">إدارة المسابقات</h3><p class="text-xs text-amber-800">أضف المسابقة أو عدّلها، وأوقف ظهورها عند الحاجة. البيانات محفوظة في Firebase.</p></div>
+        <button onclick="openContestEditor()" class="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black px-5 py-2.5 rounded-xl text-sm"><i class="fa-solid fa-plus ml-1"></i> إضافة مسابقة</button>
+      </div>` : '';
+      if (!appState.contestsLoaded) {
+        cards.innerHTML = '<p class="col-span-full text-center text-amber-800 py-10">جاري تحميل المسابقات من Firebase...</p>';
+        return;
+      }
+      const visible = appState.contests.filter(contest => owner || contest.enabled !== false);
+      if (!visible.length) {
+        cards.innerHTML = '<div class="col-span-full contest-card rounded-3xl p-10 text-center text-amber-900 font-bold">لا توجد مسابقات معلنة حاليًا. تابعنا قريبًا.</div>';
+        return;
+      }
+      cards.innerHTML = visible.map(contest => {
+        const start = Number(contest.startAt);
+        const end = Number(contest.endAt);
+        const target = Math.max(1, Math.floor(Number(contest.targetOrders)));
+        const prize = Number(contest.prizeAmount);
+        const now = Date.now();
+        const phase = contest.enabled === false ? 'موقوفة' : now < start ? 'قريبًا' : now > end ? 'انتهت' : 'جارية الآن';
+        const count = marketerUid ? contestOrderCount(contest, marketerUid) : 0;
+        const image = safeImageUrl(contest.image || '', '');
+        const standings = staff ? contestStandings(contest) : [];
+        const controls = owner ? `<div class="flex flex-wrap gap-2 border-t border-amber-200 pt-4">
+          <button onclick="openContestEditor('${escapeHtml(contest.firebaseKey)}')" class="bg-amber-100 text-amber-900 font-bold px-3 py-2 rounded-lg text-xs">تعديل</button>
+          <button onclick="toggleContestVisibility('${escapeHtml(contest.firebaseKey)}')" class="bg-slate-100 text-slate-800 font-bold px-3 py-2 rounded-lg text-xs">${contest.enabled === false ? 'نشر المسابقة' : 'إيقاف الظهور'}</button>
+          <button onclick="confirmDeleteContest('${escapeHtml(contest.firebaseKey)}')" class="bg-rose-50 text-rose-700 font-bold px-3 py-2 rounded-lg text-xs">حذف</button>
+        </div>` : '';
+        const progress = marketerUid ? `<div class="border-t border-amber-200 pt-4 space-y-2">
+          <div class="flex justify-between text-sm font-bold text-amber-950"><span>تقدمك بالأوردرات المسلّمة</span><span>${count} / ${target}</span></div>
+          <progress class="contest-progress w-full h-3" value="${Math.min(count, target)}" max="${target}" aria-label="تقدمك في ${escapeHtml(contest.title)}"></progress>
+          <p class="text-xs ${count >= target ? 'text-emerald-700 font-black' : 'text-amber-800'}">${count >= target ? 'وصلت للهدف وأصبحت مؤهلًا للجائزة. صرفها يتم بواسطة الإدارة.' : `متبقي ${target - count} أوردر مسلّم للوصول للهدف.`}</p>
+        </div>` : !staff ? '<p class="border-t border-amber-200 pt-4 text-xs text-amber-900">سجّل الدخول كمسوق لمتابعة أوردراتك في المسابقة.</p>' : '';
+        const board = staff ? `<div class="border-t border-amber-200 pt-4 text-xs text-amber-950"><strong>إجمالي أوردرات المسابقة المسلّمة: ${standings.reduce((sum, item) => sum + item.count, 0)}</strong><br><strong>تقدم المسوقين:</strong> ${standings.length ? standings.slice(0, 8).map(m => `${escapeHtml(m.name)} (${m.count}/${target})`).join(' • ') : 'لم يُسجّل أوردر مسلّم ضمن الفترة بعد.'}</div>` : '';
+        return `<article class="contest-card rounded-3xl overflow-hidden flex flex-col">
+          ${image ? `<img src="${escapeHtml(image)}" alt="صورة مسابقة ${escapeHtml(contest.title)}" class="w-full h-48 sm:h-56 object-cover bg-amber-50" loading="lazy">` : '<div class="h-40 bg-gradient-to-r from-amber-200 to-yellow-50 flex items-center justify-center"><i class="fa-solid fa-trophy text-6xl text-amber-600"></i></div>'}
+          <div class="p-5 sm:p-6 space-y-4 flex-1">
+            <div class="flex flex-wrap items-center justify-between gap-2"><span class="bg-amber-100 text-amber-900 px-3 py-1 rounded-full text-xs font-black">${phase}</span><span class="text-amber-900 text-sm font-black">جائزة ${prize.toLocaleString('ar-EG')} ج.م</span></div>
+            <h3 class="text-xl font-black text-amber-950">${escapeHtml(contest.title)}</h3>
+            <p class="text-sm leading-7 text-amber-900">${escapeHtml(contest.description || 'أكمل الهدف خلال فترة المسابقة لتحصل على الجائزة.')}</p>
+            <div class="grid grid-cols-2 gap-2 text-xs font-bold text-amber-900"><span>الهدف: ${target} أوردر مسلّم</span><span>من ${new Date(start).toLocaleDateString('ar-EG')} إلى ${new Date(end).toLocaleDateString('ar-EG')}</span></div>
+            ${progress}${board}${controls}
+          </div>
+        </article>`;
+      }).join('');
+    }
+
+    function contestDateInput(ms) {
+      const date = new Date(ms);
+      return new Date(ms - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    }
+
+    let tempContestImage = '';
+    let contestImageUploading = false;
+    function openContestEditor(key = '') {
+      if (firebaseAuth.currentUser?.uid !== FIREBASE_ADMIN_UID) return;
+      const contest = key ? appState.contests.find(item => item.firebaseKey === key) : null;
+      if (key && !contest) return;
+      tempContestImage = contest?.image?.startsWith('data:image/') ? contest.image : '';
+      const imageUrl = contest?.image?.startsWith('https://') ? contest.image : '';
+      const now = Date.now();
+      const start = Number(contest?.startAt) || now;
+      const end = Number(contest?.endAt) || now + 30 * 86400000;
+      openModal(contest ? 'تعديل المسابقة' : 'إضافة مسابقة جديدة', '', 'fa-medal', `
+        <button id="contest-save-button" onclick="saveContest()" class="bg-amber-500 text-slate-950 font-black px-5 py-2.5 rounded-xl">حفظ في Firebase</button>
+        <button onclick="closeModal()" class="bg-slate-100 text-slate-800 font-bold px-5 py-2.5 rounded-xl">إلغاء</button>`);
+      document.getElementById('modal-box-inner').classList.add('product-editor-open');
+      document.getElementById('modal-message').innerHTML = `<div class="text-right space-y-3">
+        <input id="contest-edit-key" type="hidden" value="${escapeHtml(key)}">
+        <label class="block text-xs font-bold">عنوان المسابقة<input id="contest-title-input" maxlength="100" value="${escapeHtml(contest?.title || '')}" class="mt-1 w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm"></label>
+        <label class="block text-xs font-bold">الوصف<textarea id="contest-description-input" maxlength="500" rows="2" class="mt-1 w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm">${escapeHtml(contest?.description || '')}</textarea></label>
+        <div class="grid grid-cols-2 gap-3">
+          <label class="text-xs font-bold">عدد الأوردرات المطلوبة<input id="contest-target-input" type="number" min="1" max="100000" step="1" value="${Number(contest?.targetOrders) || 10}" class="mt-1 w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm"></label>
+          <label class="text-xs font-bold">الجائزة بالجنيه<input id="contest-prize-input" type="number" min="1" max="1000000" step="1" value="${Number(contest?.prizeAmount) || 500}" class="mt-1 w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm"></label>
+          <label class="text-xs font-bold">بداية المسابقة<input id="contest-start-input" type="datetime-local" value="${contestDateInput(start)}" class="mt-1 w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm"></label>
+          <label class="text-xs font-bold">نهاية المسابقة<input id="contest-end-input" type="datetime-local" value="${contestDateInput(end)}" class="mt-1 w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm"></label>
+        </div>
+        <label class="block text-xs font-bold">رابط صورة المسابقة (اختياري)<input id="contest-image-url-input" type="url" dir="ltr" value="${escapeHtml(imageUrl)}" placeholder="https://..." class="mt-1 w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm"></label>
+        <label class="block text-xs font-bold">أو اختر صورة من جهازك<input type="file" accept="image/jpeg,image/png,image/webp" onchange="handleContestImageUpload(event)" class="mt-1 w-full text-xs"></label>
+        <div class="flex items-center gap-3"><img id="contest-image-preview" src="${escapeHtml(safeImageUrl(contest?.image || '', ''))}" class="w-24 h-16 object-cover rounded-lg border border-amber-200 ${contest?.image ? '' : 'hidden'}" alt="معاينة صورة المسابقة"><button type="button" onclick="clearContestImage()" class="text-xs text-rose-700 font-bold">إزالة الصورة</button></div>
+        <p class="text-xs text-slate-500">تُحسب الأوردرات المنشأة أثناء الفترة بعد وصول حالتها إلى «تم التسليم». صرف الجائزة يدويًا من الإدارة.</p>
+      </div>`;
+    }
+
+    async function handleContestImageUpload(event) {
+      const file = event.target.files?.[0];
+      if (!file || contestImageUploading) return;
+      contestImageUploading = true;
+      try {
+        tempContestImage = await optimizeProductImage(file);
+        document.getElementById('contest-image-url-input').value = '';
+        const preview = document.getElementById('contest-image-preview');
+        if (preview) { preview.src = tempContestImage; preview.classList.remove('hidden'); }
+        showToast('تم تجهيز صورة المسابقة. اضغط حفظ لتخزينها.');
+      } catch (error) {
+        showToast('تعذر تجهيز الصورة. اختر JPG أو PNG أو WebP أقل من 12 ميجابايت.', 'error');
+      } finally {
+        contestImageUploading = false;
+        event.target.value = '';
+      }
+    }
+
+    function clearContestImage() {
+      tempContestImage = '';
+      document.getElementById('contest-image-url-input').value = '';
+      const preview = document.getElementById('contest-image-preview');
+      preview.src = '';
+      preview.classList.add('hidden');
+    }
+
+    async function saveContest() {
+      if (firebaseAuth.currentUser?.uid !== FIREBASE_ADMIN_UID || appState.currentUser?.role !== 'super_admin') return;
+      if (contestImageUploading) return showToast('انتظر انتهاء تجهيز الصورة أولًا', 'error');
+      const key = document.getElementById('contest-edit-key').value;
+      const original = key ? appState.contests.find(item => item.firebaseKey === key) : null;
+      if (key && !original) return showToast('تعذر العثور على المسابقة للتعديل', 'error');
+      const title = document.getElementById('contest-title-input').value.trim();
+      const description = document.getElementById('contest-description-input').value.trim();
+      const targetOrders = Number(document.getElementById('contest-target-input').value);
+      const prizeAmount = Number(document.getElementById('contest-prize-input').value);
+      const startAt = new Date(document.getElementById('contest-start-input').value).getTime();
+      const endAt = new Date(document.getElementById('contest-end-input').value).getTime();
+      const image = tempContestImage || document.getElementById('contest-image-url-input').value.trim();
+      if (!title || title.length > 100 || description.length > 500 || !Number.isInteger(targetOrders) || targetOrders < 1 || targetOrders > 100000
+        || !Number.isInteger(prizeAmount) || prizeAmount < 1 || prizeAmount > 1000000
+        || !Number.isFinite(startAt) || !Number.isFinite(endAt) || endAt <= startAt
+        || (image && (!safeImageUrl(image, '') || image.length > 500000))) {
+        return showToast('راجع العنوان والهدف والجائزة والتواريخ ورابط أو حجم الصورة', 'error');
+      }
+      const button = document.getElementById('contest-save-button');
+      button.disabled = true;
+      const ref = key ? contestsRef.child(key) : contestsRef.push();
+      try {
+        await ref.set({ title, description, targetOrders, prizeAmount, startAt, endAt, image,
+          enabled: original ? original.enabled !== false : true,
+          createdAt: original?.createdAt || firebase.database.ServerValue.TIMESTAMP,
+          updatedAt: firebase.database.ServerValue.TIMESTAMP });
+        tempContestImage = '';
+        closeModal();
+        showToast('تم حفظ المسابقة في Firebase');
+      } catch (error) {
+        console.error('[Clovs Firebase] contest save failed:', error);
+        showToast('فشل حفظ المسابقة. راجع صلاحيات siteSettings أو حجم الصورة.', 'error');
+      } finally { button.disabled = false; }
+    }
+
+    async function toggleContestVisibility(key) {
+      if (firebaseAuth.currentUser?.uid !== FIREBASE_ADMIN_UID) return;
+      const contest = appState.contests.find(item => item.firebaseKey === key);
+      if (!contest) return;
+      try {
+        await contestsRef.child(key).update({ enabled: contest.enabled === false, updatedAt: firebase.database.ServerValue.TIMESTAMP });
+        showToast('تم تحديث ظهور المسابقة في Firebase');
+      } catch (error) { showToast('تعذر تحديث المسابقة في Firebase', 'error'); }
+    }
+
+    function confirmDeleteContest(key) {
+      if (firebaseAuth.currentUser?.uid !== FIREBASE_ADMIN_UID || !appState.contests.some(item => item.firebaseKey === key)) return;
+      openModal('حذف المسابقة؟', 'ستُحذف بيانات المسابقة، لكن الأوردرات المسجلة ستظل محفوظة.', 'fa-triangle-exclamation', `
+        <button onclick="deleteContest('${escapeHtml(key)}')" class="bg-rose-600 text-white font-bold px-5 py-2.5 rounded-xl">حذف المسابقة</button>
+        <button onclick="closeModal()" class="bg-slate-100 text-slate-800 font-bold px-5 py-2.5 rounded-xl">إلغاء</button>`);
+    }
+
+    async function deleteContest(key) {
+      if (firebaseAuth.currentUser?.uid !== FIREBASE_ADMIN_UID) return;
+      try {
+        await contestsRef.child(key).remove();
+        closeModal();
+        showToast('تم حذف المسابقة من Firebase');
+      } catch (error) { showToast('فشل حذف المسابقة من Firebase', 'error'); }
     }
 
     function renderShippingRatesView() {
