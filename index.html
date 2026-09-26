@@ -69,6 +69,19 @@
     @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
     .product-card { transition: transform .25s ease, box-shadow .25s ease; }
     .product-card:hover { transform: translateY(-5px); box-shadow: 0 22px 45px -24px rgba(15, 23, 42, .35); }
+    .product-card.is-best-seller { border-color:#fbbf24; box-shadow:0 12px 30px -18px rgba(217,119,6,.6); }
+    .product-card.has-offer { border-color:#fb7185; }
+    .product-card.is-best-seller.has-offer { border-color:#f59e0b; box-shadow:0 12px 30px -18px rgba(225,29,72,.55); }
+    .product-card.is-best-seller::before, .product-card.has-offer::before { content:''; position:absolute; inset:0 0 auto; height:4px; background:#f59e0b; z-index:2; }
+    .product-card.has-offer::before { background:#e11d48; }
+    .product-card.is-best-seller.has-offer::before { background:linear-gradient(90deg,#f59e0b,#e11d48); }
+    .product-photo { background:#f8fafc; object-fit:contain; }
+    .product-gallery-thumb { border:2px solid transparent; transition:border-color .2s ease, transform .2s ease; }
+    .product-gallery-thumb:hover, .product-gallery-thumb.is-active { border-color:#059669; transform:translateY(-2px); }
+    .product-card.is-best-seller .product-highlight { animation:highlightPulse 3s ease-in-out infinite; }
+    @keyframes highlightPulse { 50% { box-shadow:0 0 0 5px rgba(245,158,11,.15); } }
+    #modal-box-inner { max-height:min(90dvh, 900px); overflow-y:auto; }
+    #modal-box-inner.product-editor-open { max-width:42rem !important; }
     .social-card { transition: transform .25s ease, box-shadow .25s ease; }
     .social-card:hover { transform: translateY(-4px); box-shadow: 0 20px 36px -22px rgba(15, 23, 42, .3); }
     /* Comfortable dark palette with readable text, menus, alerts, and form fields. */
@@ -186,7 +199,7 @@
     header { animation:gentleViewEnter .55s cubic-bezier(.2,.7,.25,1) both; }
     .app-view.page-opening:not(.hidden) { animation:gentleViewEnter .55s cubic-bezier(.2,.7,.25,1) both; }
     .product-card img { transition:transform .45s cubic-bezier(.2,.7,.25,1); }
-    .product-card:hover img { transform:scale(1.06); }
+    .product-card:hover .product-photo { transform:none; }
     #slider-container .slider-image { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:.6; }
     #home-hero .slider-arrow:hover { transform:translateY(-50%) scale(1.08); background-color:rgba(15,23,42,.85); }
     #slider-dots button:hover { transform:scale(1.18); }
@@ -771,6 +784,10 @@
     const productsRef = firebaseDB.ref('products');
     const slidesRef = firebaseDB.ref('siteSettings/slides');
     const socialLinksRef = firebaseDB.ref('siteSettings/socialLinks');
+    const categoriesRef = firebaseDB.ref('catalogCategories');
+    const shippingRatesRef = firebaseDB.ref('siteSettings/shippingRates');
+    const contactInfoRef = firebaseDB.ref('siteSettings/contactInfo');
+    const brandingRef = firebaseDB.ref('siteSettings/branding');
     const staffRolesRef = firebaseDB.ref('staffRoles');
     const marketerProfilesRef = firebaseDB.ref('marketerProfiles');
     const marketerUsernamesRef = firebaseDB.ref('marketerUsernames');
@@ -871,6 +888,11 @@
         if (firebaseAuth.currentUser?.uid !== authUser.uid) return;
         const profile = snapshot.val();
         if (!profile || appState.currentUser?.role !== 'marketer') return;
+        if (profile.status !== 'approved') {
+          firebaseAuth.signOut();
+          showToast('تم إيقاف حساب المسوق', 'error');
+          return;
+        }
         Object.assign(appState.currentUser, profile);
         const cached = appState.usersList.find(user => user.id === appState.currentUser.id);
         if (cached) Object.assign(cached, profile);
@@ -1080,6 +1102,28 @@
     }
 
     function startFirebaseSiteSettingsSync() {
+      categoriesRef.on('value', snapshot => {
+        if (Array.isArray(snapshot.val())) appState.categories = snapshot.val().filter(x => typeof x === 'string');
+        if (appState.currentView === 'product-manager') renderProductManagerDashboard();
+        if (appState.currentView === 'products') renderProductsCatalog();
+      }, error => console.error('[Clovs Firebase] categories read failed:', error));
+      shippingRatesRef.on('value', snapshot => {
+        appState.shippingRates = { ...DEFAULT_SHIPPING, ...(snapshot.val() || {}) };
+        if (appState.currentView === 'shipping-rates') renderShippingRatesView();
+        if (appState.currentView === 'cart') renderCartView();
+      }, error => console.error('[Clovs Firebase] shipping read failed:', error));
+      contactInfoRef.on('value', snapshot => {
+        appState.contactInfo = { ...appState.contactInfo, ...(snapshot.val() || {}) };
+        if (appState.currentView === 'contact-support') renderContactSupportView();
+        if (appState.currentView === 'super-customizer') renderSuperCustomizerView();
+      }, error => console.error('[Clovs Firebase] contact read failed:', error));
+      brandingRef.on('value', snapshot => {
+        if (!snapshot.exists()) return;
+        const branding = snapshot.val();
+        appState.siteTheme = { ...appState.siteTheme, appName: branding.appName || 'Clovs', logoUrl: branding.logoUrl || '' };
+        applyThemeToDOM();
+        if (appState.currentView === 'super-customizer') renderSuperCustomizerView();
+      }, error => console.error('[Clovs Firebase] branding read failed:', error));
       slidesRef.on('value', (snapshot) => {
         const data = snapshot.val();
         if (data !== null) {
@@ -1158,6 +1202,7 @@
 
       const modal = document.getElementById('custom-modal');
       const box = document.getElementById('modal-box-inner');
+      box.classList.remove('product-editor-open');
       modal.classList.remove('hidden');
       setTimeout(() => {
         box.classList.remove('scale-95', 'opacity-0');
@@ -1419,7 +1464,7 @@
           `;
         }
 
-        if (user.role === 'product_manager' || user.role === 'super_admin') {
+        if (user.role === 'product_manager' || user.role === 'admin' || user.role === 'super_admin') {
           html += `
             <div class="pt-4 pb-2 px-4 text-xs font-black text-slate-400 uppercase tracking-wider">إدارة المنتجات</div>
             <button onclick="switchView('product-manager')" class="w-full text-right px-4 py-3 rounded-xl font-bold text-slate-700 hover:bg-slate-50 hover:text-brand-600 transition flex items-center gap-3 text-sm">
@@ -1484,10 +1529,11 @@
       appState.products.slice(0, 4).forEach(prod => {
         const isFav = appState.favorites.includes(prod.id);
         html += `
-          <div class="product-card bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col relative group">
+          <div class="product-card ${productCardClasses(prod)} bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col relative group">
             <div class="relative h-48 bg-slate-100 overflow-hidden">
-              <img src="${prod.image}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" onerror="this.src='https://placehold.co/400x300/e2e8f0/64748b?text=Clovs'">
+              <img src="${escapeHtml(productMainImage(prod))}" class="product-photo w-full h-full" alt="${escapeHtml(prod.name)}" onerror="this.src='${PRODUCT_PLACEHOLDER}'">
               ${discountBadge(prod)}
+              ${productHighlightBadge(prod)}
               <button onclick="event.stopPropagation(); toggleFavorite('${prod.id}')" class="absolute top-3 left-3 w-9 h-9 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center shadow hover:scale-110 transition ${isFav ? 'text-rose-500' : 'text-slate-400 hover:text-rose-500'}">
                 <i class="fa-${isFav ? 'solid' : 'regular'} fa-heart text-sm"></i>
               </button>
@@ -1626,6 +1672,54 @@
       dotsContainer.innerHTML = dotsHtml;
     }
 
+    const PRODUCT_PLACEHOLDER = 'https://placehold.co/500x500/059669/ffffff?text=Clovs';
+    const productGalleryIndexById = {};
+    let bestSellerCacheSource = null;
+    let bestSellerCache = new Set();
+
+    function productImages(prod) {
+      const raw = Array.isArray(prod?.images) ? prod.images : (prod?.images && typeof prod.images === 'object' ? Object.values(prod.images) : []);
+      const images = raw.filter(image => typeof image === 'string' && image.trim());
+      if (!images.length && prod?.image) images.push(prod.image);
+      return images.length ? images : [PRODUCT_PLACEHOLDER];
+    }
+
+    function productMainImage(prod) { return productImages(prod)[0]; }
+
+    function bestSellerIds() {
+      if (bestSellerCacheSource === appState.products) return bestSellerCache;
+      bestSellerCacheSource = appState.products;
+      bestSellerCache = new Set([...appState.products]
+        .filter(product => Number(product.soldCount) > 0)
+        .sort((a, b) => Number(b.soldCount) - Number(a.soldCount))
+        .slice(0, 3).map(product => product.id));
+      return bestSellerCache;
+    }
+
+    function productCardClasses(prod) {
+      return `${bestSellerIds().has(prod.id) ? 'is-best-seller' : ''} ${discountRate(prod) ? 'has-offer' : ''}`;
+    }
+
+    function productHighlightBadge(prod) {
+      return bestSellerIds().has(prod.id)
+        ? '<span class="product-highlight absolute bottom-3 right-3 z-10 bg-amber-400 text-slate-900 text-xs font-black px-3 py-1.5 rounded-full shadow">الأكثر مبيعًا</span>'
+        : '';
+    }
+
+    function showProductImage(productId, index) {
+      const prod = appState.products.find(product => product.id === productId);
+      if (!prod) return;
+      const images = productImages(prod);
+      if (index < 0 || index >= images.length) return;
+      productGalleryIndexById[productId] = index;
+      const main = document.getElementById('product-gallery-main');
+      if (main) main.src = images[index];
+      document.querySelectorAll('.product-gallery-thumb').forEach((button, i) => {
+        button.classList.toggle('is-active', i === index);
+        button.setAttribute('aria-pressed', String(i === index));
+      });
+    }
+
     function discountRate(prod) {
       const n = Number(prod.discountPercent);
       return Number.isFinite(n) && n > 0 && n < 100 ? n : 0;
@@ -1700,10 +1794,11 @@
         const isFav = appState.favorites.includes(prod.id);
         const prodCat = prod.category || 'عام';
         html += `
-          <div class="product-card bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col relative group">
+          <div class="product-card ${productCardClasses(prod)} bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col relative group">
             <div class="relative h-52 bg-slate-100 overflow-hidden">
-              <img src="${prod.image}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" onerror="this.src='https://placehold.co/400x300/e2e8f0/64748b?text=Clovs'">
+              <img src="${escapeHtml(productMainImage(prod))}" class="product-photo w-full h-full" alt="${escapeHtml(prod.name)}" onerror="this.src='${PRODUCT_PLACEHOLDER}'">
               ${discountBadge(prod)}
+              ${productHighlightBadge(prod)}
               <button onclick="event.stopPropagation(); toggleFavorite('${prod.id}')" class="absolute top-3 left-3 w-9 h-9 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center shadow hover:scale-110 transition ${isFav ? 'text-rose-500' : 'text-slate-400 hover:text-rose-500'}">
                 <i class="fa-${isFav ? 'solid' : 'regular'} fa-heart text-base"></i>
               </button>
@@ -1712,7 +1807,7 @@
               <div class="space-y-2">
                 <div class="flex items-center justify-between">
                   <span class="text-[11px] font-black text-brand-700 bg-brand-50 px-2.5 py-1 rounded-lg">${prodCat}</span>
-                  <span class="text-[11px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg">المخزون: ${prod.stock || 10}</span>
+                  <span class="text-[11px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg">المخزون: ${prod.stock ?? 10}</span>
                 </div>
                 <h3 class="font-black text-slate-900 text-xl">${prod.name}</h3>
                 <p class="text-slate-500 text-xs line-clamp-2 leading-relaxed">${prod.desc}</p>
@@ -1756,10 +1851,11 @@
       let html = '';
       favProducts.forEach(prod => {
         html += `
-          <div class="product-card bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col relative group">
+          <div class="product-card ${productCardClasses(prod)} bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col relative group">
             <div class="relative h-52 bg-slate-100 overflow-hidden">
-              <img src="${prod.image}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" onerror="this.src='https://placehold.co/400x300/e2e8f0/64748b?text=Clovs'">
+              <img src="${escapeHtml(productMainImage(prod))}" class="product-photo w-full h-full" alt="${escapeHtml(prod.name)}" onerror="this.src='${PRODUCT_PLACEHOLDER}'">
               ${discountBadge(prod)}
+              ${productHighlightBadge(prod)}
               <button onclick="event.stopPropagation(); toggleFavorite('${prod.id}')" class="absolute top-3 left-3 w-9 h-9 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center shadow text-rose-500 hover:scale-110 transition">
                 <i class="fa-solid fa-heart text-base"></i>
               </button>
@@ -1816,15 +1912,30 @@
       }
 
       const isFav = appState.favorites.includes(prod.id);
+      const images = productImages(prod);
+      const imageIndex = Math.min(productGalleryIndexById[prod.id] || 0, images.length - 1);
+      const variants = Array.isArray(prod.variants) ? prod.variants : [];
+      const variantSelectors = variants.map((variant, index) => `<label class="block text-sm font-bold text-slate-700">
+        ${escapeHtml(variant.name)}
+        <select data-product-variant="${index}" class="mt-2 w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold focus:outline-none focus:border-brand-500">
+          <option value="">اختر ${escapeHtml(variant.name)}</option>
+          ${(variant.options || []).map(option => `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`).join('')}
+        </select>
+      </label>`).join('');
 
       container.innerHTML = `
         <div class="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden p-6 sm:p-10">
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-            <div class="relative rounded-3xl overflow-hidden bg-slate-100 h-80 sm:h-96 shadow-inner">
-              <img src="${prod.image}" class="w-full h-full object-cover" onerror="this.src='https://placehold.co/600x600/e2e8f0/64748b?text=Clovs'">
-              <button onclick="toggleFavorite('${prod.id}')" class="absolute top-4 left-4 w-12 h-12 rounded-2xl bg-white/90 backdrop-blur-md flex items-center justify-center shadow-lg hover:scale-110 transition ${isFav ? 'text-rose-500' : 'text-slate-400 hover:text-rose-500'}">
-                <i class="fa-${isFav ? 'solid' : 'regular'} fa-heart text-xl"></i>
-              </button>
+            <div class="min-w-0">
+              <div class="relative rounded-3xl overflow-hidden bg-slate-100 h-80 sm:h-96 shadow-inner">
+                <img id="product-gallery-main" src="${escapeHtml(images[imageIndex])}" class="product-photo w-full h-full" alt="${escapeHtml(prod.name)}" onerror="this.src='${PRODUCT_PLACEHOLDER}'">
+                <button onclick="toggleFavorite('${prod.id}')" class="absolute top-4 left-4 w-12 h-12 rounded-2xl bg-white/90 backdrop-blur-md flex items-center justify-center shadow-lg hover:scale-110 transition ${isFav ? 'text-rose-500' : 'text-slate-400 hover:text-rose-500'}">
+                  <i class="fa-${isFav ? 'solid' : 'regular'} fa-heart text-xl"></i>
+                </button>
+              </div>
+              ${images.length > 1 ? `<div class="flex gap-2 overflow-x-auto py-3" aria-label="صور المنتج">
+                ${images.map((image, index) => `<button type="button" onclick="showProductImage('${prod.id}', ${index})" aria-label="عرض صورة ${index + 1}" aria-pressed="${index === imageIndex}" class="product-gallery-thumb ${index === imageIndex ? 'is-active' : ''} flex-shrink-0 w-16 h-16 rounded-xl overflow-hidden bg-slate-100"><img src="${escapeHtml(image)}" class="product-photo w-full h-full" alt=""></button>`).join('')}
+              </div>` : ''}
             </div>
             <div class="space-y-6">
               <div>
@@ -1840,9 +1951,11 @@
                 </div>
                 <div class="flex justify-between items-center text-sm">
                   <span class="font-bold text-slate-600">المخزون المتاح:</span>
-                  <span class="font-bold text-brand-600">${prod.stock || 10} قطعة</span>
+                  <span class="font-bold text-brand-600">${prod.stock ?? 10} قطعة</span>
                 </div>
               </div>
+
+              ${variantSelectors ? `<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 p-5 rounded-2xl bg-slate-50 border border-slate-200"><div class="sm:col-span-2 font-black text-slate-900">اختيارات المنتج</div>${variantSelectors}</div>` : ''}
 
               <div class="space-y-3 bg-brand-50/50 p-6 rounded-2xl border border-brand-100">
                 <label class="block text-sm font-black text-slate-800">حدد عمولتك الثابتة بالجنيه (فوق سعر المنتج):</label>
@@ -1883,16 +1996,26 @@
 
       const commInput = document.getElementById('detail-commission-input');
       const commission = commInput ? Math.max(0, parseFloat(commInput.value) || 0) : 50;
+      const selectedVariants = {};
+      (Array.isArray(prod.variants) ? prod.variants : []).forEach((variant, index) => {
+        const value = document.querySelector(`[data-product-variant="${index}"]`)?.value || '';
+        if (value) selectedVariants[variant.name] = value;
+      });
+      if (Object.keys(selectedVariants).length !== (Array.isArray(prod.variants) ? prod.variants.length : 0)) {
+        showToast('اختار اللون أو المقاس وكل خيارات المنتج قبل إضافته للسلة.', 'error');
+        return;
+      }
 
-      const existing = appState.activeCart.items.find(item => item.product.id === productId);
+      const existing = appState.activeCart.items.find(item => item.product.id === productId &&
+        JSON.stringify(item.selectedVariants || {}) === JSON.stringify(selectedVariants) && item.commission === commission);
       if (existing) {
         existing.quantity += 1;
-        existing.commission = commission;
       } else {
         appState.activeCart.items.push({
           product: prod,
           quantity: 1,
-          commission: commission
+          commission: commission,
+          selectedVariants
         });
       }
 
@@ -1936,9 +2059,10 @@
         itemsHtml += `
           <div class="p-4 bg-slate-50 rounded-2xl border border-slate-200/70 flex items-center justify-between gap-4">
             <div class="flex items-center gap-4">
-              <img src="${item.product.image}" class="w-16 h-16 rounded-xl object-cover" onerror="this.src='https://placehold.co/100x100/e2e8f0/64748b?text=Clovs'">
+              <img src="${escapeHtml(productMainImage(item.product))}" class="product-photo w-16 h-16 rounded-xl flex-shrink-0" onerror="this.src='${PRODUCT_PLACEHOLDER}'">
               <div>
                 <h4 class="font-bold text-slate-900 text-sm">${item.product.name}</h4>
+                ${Object.entries(item.selectedVariants || {}).length ? `<div class="text-xs text-brand-700 font-bold mt-1">${Object.entries(item.selectedVariants).map(([key, value]) => `${escapeHtml(key)}: ${escapeHtml(value)}`).join(' • ')}</div>` : ''}
                 <div class="text-xs text-slate-500 mt-0.5">سعر المنتج: ${money(getProductPrice(item.product))} ج.م | عمولتك: <span class="font-bold text-brand-600">${item.commission} ج.م</span></div>
                 <div class="text-xs font-bold text-slate-700 mt-1">سعر البيع للعميل: ${money(getProductPrice(item.product) + item.commission)} ج.م</div>
               </div>
@@ -2148,7 +2272,17 @@
         marketerName: appState.currentUser.name,
         createdAt: firebase.database.ServerValue.TIMESTAMP,
         date: new Date().toLocaleDateString('ar-EG'),
-        items: JSON.parse(JSON.stringify(appState.activeCart.items)),
+        items: appState.activeCart.items.map(item => ({
+          product: {
+            id: item.product.id,
+            name: item.product.name,
+            price: item.product.price,
+            discountPercent: item.product.discountPercent || 0
+          },
+          quantity: item.quantity,
+          commission: item.commission,
+          selectedVariants: { ...(item.selectedVariants || {}) }
+        })),
         customer: { ...c },
         shippingRate: shippingRate,
         subtotal: subtotal,
@@ -2653,22 +2787,23 @@
     function renderProductManagerDashboard() {
       const container = document.getElementById('view-product-manager');
       const user = appState.currentUser;
-      if (!user || (user.role !== 'product_manager' && user.role !== 'super_admin')) return;
+      if (!user || !['product_manager', 'admin', 'super_admin'].includes(user.role)) return;
 
       let pRows = '';
       if (appState.products.length === 0) {
-        pRows = `<tr><td colspan="6" class="text-center py-6 text-slate-400 text-sm">لا توجد منتجات في الكتالوج حالياً.</td></tr>`;
+        pRows = `<tr><td colspan="7" class="text-center py-6 text-slate-400 text-sm">لا توجد منتجات في الكتالوج حالياً.</td></tr>`;
       } else {
         appState.products.forEach(p => {
           pRows += `
             <tr class="border-b border-slate-100 text-sm">
               <td class="py-3 px-4 flex items-center gap-3">
-                <img src="${p.image}" class="w-10 h-10 rounded-lg object-cover" onerror="this.src='https://placehold.co/100x100/e2e8f0/64748b?text=C'">
+                <img src="${escapeHtml(productMainImage(p))}" class="product-photo w-10 h-10 rounded-lg" onerror="this.src='${PRODUCT_PLACEHOLDER}'">
                 <span class="font-bold text-slate-900">${p.name}</span>
               </td>
               <td class="py-3 px-4 font-bold text-brand-700 text-xs"><span class="bg-brand-50 px-2 py-1 rounded-md">${p.category || 'عام'}</span></td>
               <td class="py-3 px-4 font-black text-brand-600">${money(getProductPrice(p))} ج.م ${discountRate(p) ? `<span class="text-rose-600 text-xs">(${discountRate(p)}٪ خصم)</span>` : ''}</td>
-              <td class="py-3 px-4 font-bold text-slate-700">${p.stock || 10} قطعة</td>
+              <td class="py-3 px-4 font-bold text-slate-700">${p.stock ?? 10} قطعة</td>
+              <td class="py-3 px-4 font-bold text-amber-700">${Number(p.soldCount) || 0}</td>
               <td class="py-3 px-4 text-xs text-slate-500 max-w-xs truncate">${p.desc}</td>
               <td class="py-3 px-4 flex gap-2">
                 <button onclick="editProductModal('${p.id}')" class="text-brand-600 hover:text-brand-800 p-2 font-bold text-xs"><i class="fa-solid fa-pen-to-square"></i> تعديل</button>
@@ -2731,6 +2866,7 @@
                   <th class="py-3 px-4">التصنيف</th>
                   <th class="py-3 px-4">السعر الأساسي</th>
                   <th class="py-3 px-4">المخزون</th>
+                  <th class="py-3 px-4">تم بيعها</th>
                   <th class="py-3 px-4">الوصف</th>
                   <th class="py-3 px-4">الإجراءات</th>
                 </tr>
@@ -2742,7 +2878,7 @@
       `;
     }
 
-    function addNewCategory() {
+    async function addNewCategory() {
       const input = document.getElementById('new-category-input');
       const val = input ? input.value.trim() : '';
       if (!val) {
@@ -2754,30 +2890,155 @@
         showToast('هذا التصنيف موجود بالفعل', 'error');
         return;
       }
-      appState.categories.push(val);
-      input.value = '';
-      showToast(`تمت إضافة تصنيف "${val}" بنجاح`);
-      renderProductManagerDashboard();
+      try {
+        const result = await categoriesRef.transaction(current => {
+          const list = Array.isArray(current) ? current : appState.categories;
+          return list.includes(val) ? undefined : [...list, val];
+        });
+        if (!result.committed) {
+          showToast('هذا التصنيف موجود بالفعل', 'error');
+          return;
+        }
+        input.value = '';
+        showToast(`تمت إضافة تصنيف "${val}" بنجاح`);
+      } catch (error) {
+        console.error('[Clovs Firebase] category save failed:', error);
+        showToast('فشل حفظ التصنيف في Firebase', 'error');
+      }
     }
 
-    function deleteCategory(index) {
+    async function deleteCategory(index) {
       if (!appState.categories || !appState.categories[index]) return;
       const catName = appState.categories[index];
-      appState.categories.splice(index, 1);
-      showToast(`تم حذف تصنيف "${catName}"`);
-      renderProductManagerDashboard();
+      try {
+        await categoriesRef.transaction(current =>
+          (Array.isArray(current) ? current : appState.categories).filter(value => value !== catName));
+        showToast(`تم حذف تصنيف "${catName}"`);
+      } catch (error) {
+        console.error('[Clovs Firebase] category deletion failed:', error);
+        showToast('فشل حذف التصنيف من Firebase', 'error');
+      }
     }
 
-    let tempUploadedProductImage = '';
-    function previewLocalProductImage(e) {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = function(evt) {
-        tempUploadedProductImage = evt.target.result;
-        showToast('تم تحميل صورة المنتج بنجاح');
-      };
-      reader.readAsDataURL(file);
+    let tempProductImages = [];
+    let tempProductVariants = [];
+    let productImagesLoading = false;
+
+    function renderProductImagePreviews() {
+      const container = document.getElementById('pm-image-previews');
+      if (!container) return;
+      container.innerHTML = tempProductImages.length ? tempProductImages.map((src, index) => `
+        <div class="relative w-24 rounded-xl border border-slate-200 bg-slate-50 p-1">
+          <img src="${escapeHtml(src)}" class="product-photo w-full h-20 rounded-lg" alt="صورة المنتج ${index + 1}">
+          <div class="flex justify-between gap-1 mt-1">
+            <button type="button" onclick="makeProductImagePrimary(${index})" class="text-[10px] font-bold ${index === 0 ? 'text-brand-700' : 'text-slate-600'}" title="اختيار الصورة الرئيسية">${index === 0 ? 'رئيسية' : 'اجعلها رئيسية'}</button>
+            <button type="button" onclick="removeProductImage(${index})" class="text-[10px] text-rose-600 font-bold" title="حذف الصورة">حذف</button>
+          </div>
+        </div>`).join('') : '<p class="text-xs text-slate-500">لم تُضف صور بعد.</p>';
+      const count = document.getElementById('pm-image-count');
+      if (count) count.textContent = `${tempProductImages.length} من 8 صور`;
+    }
+
+    function makeProductImagePrimary(index) {
+      if (index <= 0 || index >= tempProductImages.length) return;
+      tempProductImages.unshift(tempProductImages.splice(index, 1)[0]);
+      renderProductImagePreviews();
+    }
+
+    function removeProductImage(index) {
+      tempProductImages.splice(index, 1);
+      renderProductImagePreviews();
+    }
+
+    function addProductImageUrl() {
+      const input = document.getElementById('pm-img-url');
+      const value = input.value.trim();
+      if (!/^https:\/\//i.test(value) || tempProductImages.length >= 8) {
+        showToast('اكتب رابط صورة يبدأ بـ https://، وبحد أقصى 8 صور.', 'error');
+        return;
+      }
+      if (!tempProductImages.includes(value)) tempProductImages.push(value);
+      input.value = '';
+      renderProductImagePreviews();
+    }
+
+    function optimizeProductImage(file) {
+      return new Promise((resolve, reject) => {
+        if (!file.type.startsWith('image/') || file.size > 12 * 1024 * 1024) return reject(new Error('invalid-image'));
+        const url = URL.createObjectURL(file);
+        const image = new Image();
+        image.onload = () => {
+          try {
+            const scale = Math.min(1, 1200 / Math.max(image.width, image.height));
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round(image.width * scale));
+            canvas.height = Math.max(1, Math.round(image.height * scale));
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+            let result = canvas.toDataURL('image/jpeg', .78);
+            if (result.length > 850000) result = canvas.toDataURL('image/jpeg', .58);
+            if (result.length > 850000) {
+              const smaller = Math.min(1, 850 / Math.max(image.width, image.height));
+              canvas.width = Math.max(1, Math.round(image.width * smaller));
+              canvas.height = Math.max(1, Math.round(image.height * smaller));
+              ctx.fillStyle = '#ffffff';
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+              ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+              result = canvas.toDataURL('image/jpeg', .55);
+            }
+            if (result.length > 1000000) throw new Error('image-too-large');
+            URL.revokeObjectURL(url);
+            resolve(result);
+          } catch (error) { URL.revokeObjectURL(url); reject(error); }
+        };
+        image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image-load-failed')); };
+        image.src = url;
+      });
+    }
+
+    async function previewLocalProductImage(e) {
+      const files = [...(e.target.files || [])];
+      if (!files.length || productImagesLoading) return;
+      if (files.length + tempProductImages.length > 8) {
+        showToast('يمكن إضافة 8 صور فقط لكل منتج.', 'error');
+        e.target.value = '';
+        return;
+      }
+      productImagesLoading = true;
+      try {
+        for (const file of files) tempProductImages.push(await optimizeProductImage(file));
+        renderProductImagePreviews();
+        showToast('تم تجهيز صور المنتج. اختر الصورة الرئيسية قبل الحفظ.');
+      } catch (error) {
+        console.error('[Clovs] product image processing failed:', error);
+        showToast('تعذر تجهيز إحدى الصور. جرّب صورة JPG أو PNG أصغر من 12 ميجابايت.', 'error');
+      } finally {
+        productImagesLoading = false;
+        e.target.value = '';
+      }
+    }
+
+    function renderProductVariantsEditor() {
+      const container = document.getElementById('pm-variants-list');
+      if (!container) return;
+      container.innerHTML = tempProductVariants.map((variant, index) => `
+        <div class="grid grid-cols-1 sm:grid-cols-[1fr_2fr_auto] gap-2 items-end p-3 bg-slate-50 rounded-xl border border-slate-200">
+          <label class="text-xs font-bold">نوع الاختيار (مثل اللون)
+            <input value="${escapeHtml(variant.name)}" oninput="tempProductVariants[${index}].name=this.value" class="w-full mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm" placeholder="اللون أو المقاس">
+          </label>
+          <label class="text-xs font-bold">الاختيارات مفصولة بفاصلة
+            <input value="${escapeHtml((variant.options || []).join('، '))}" oninput="tempProductVariants[${index}].options=this.value.split(/[,،]/).map(v=>v.trim()).filter(Boolean)" class="w-full mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm" placeholder="أحمر، أسود، أبيض">
+          </label>
+          <button type="button" onclick="tempProductVariants.splice(${index},1);renderProductVariantsEditor()" class="text-rose-600 font-bold text-xs px-2 py-2">حذف</button>
+        </div>`).join('');
+    }
+
+    function addProductVariant() {
+      if (tempProductVariants.length >= 4) return showToast('الحد الأقصى 4 أنواع اختيارات لكل منتج.', 'error');
+      tempProductVariants.push({ name: '', options: [] });
+      renderProductVariantsEditor();
     }
 
     function editProductModal(id) {
@@ -2793,22 +3054,23 @@
       const nameVal = isEdit ? prod.name : '';
       const priceVal = isEdit ? prod.price : '';
       const discountVal = isEdit ? (prod.discountPercent || 0) : 0;
-      const stockVal = isEdit ? (prod.stock || 10) : 10;
+      const stockVal = isEdit ? (prod.stock ?? 10) : 10;
       const descVal = isEdit ? prod.desc : '';
-      const imgVal = isEdit ? prod.image : '';
+      tempProductImages = isEdit ? productImages(prod).filter(image => image !== PRODUCT_PLACEHOLDER) : [];
+      tempProductVariants = isEdit && Array.isArray(prod.variants) ? prod.variants.map(variant => ({ name: variant.name, options: [...(variant.options || [])] })) : [];
       const catVal = isEdit ? (prod.category || 'عام') : (appState.categories[0] || 'عام');
 
       let catOptions = '';
       (appState.categories || []).forEach(cat => {
         const sel = cat === catVal ? 'selected' : '';
-        catOptions += `<option value="${cat}" ${sel}>${cat}</option>`;
+        catOptions += `<option value="${escapeHtml(cat)}" ${sel}>${escapeHtml(cat)}</option>`;
       });
 
       const formHtml = `
         <div class="space-y-4 text-right">
           <div>
             <label class="block text-xs font-bold text-slate-700 mb-1">اسم المنتج</label>
-            <input type="text" id="pm-name" value="${nameVal}" placeholder="اسم المنتج..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm">
+            <input type="text" id="pm-name" value="${escapeHtml(nameVal)}" placeholder="اسم المنتج..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm">
           </div>
           <div>
             <label class="block text-xs font-bold text-slate-700 mb-1">تصنيف / قسم المنتج</label>
@@ -2833,15 +3095,29 @@
           </div>
           <div>
             <label class="block text-xs font-bold text-slate-700 mb-1">وصف المنتج</label>
-            <textarea id="pm-desc" rows="2" placeholder="تفاصيل المنتج ومميزاته..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm">${descVal}</textarea>
+            <textarea id="pm-desc" rows="2" placeholder="تفاصيل المنتج ومميزاته..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm">${escapeHtml(descVal)}</textarea>
           </div>
-          <div>
-            <label class="block text-xs font-bold text-slate-700 mb-1">رابط صورة المنتج (URL)</label>
-            <input type="text" id="pm-img-url" value="${imgVal}" placeholder="https://..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm">
+          <div class="space-y-3 border border-slate-200 rounded-2xl p-3 sm:p-4">
+            <div class="flex justify-between items-center gap-2">
+              <label class="text-sm font-black text-slate-800">صور المنتج <span id="pm-image-count" class="text-xs text-slate-500 font-bold"></span></label>
+              <span class="text-xs text-slate-500">أول صورة هي الرئيسية</span>
+            </div>
+            <div id="pm-image-previews" class="flex flex-wrap gap-2"></div>
+            <label class="block text-xs font-bold text-slate-700">ارفع صورًا من جهازك (يمكن اختيار عدة صور)</label>
+            <input type="file" id="pm-img-file" accept="image/*" multiple onchange="previewLocalProductImage(event)" class="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-brand-50 file:text-brand-700">
+            <div class="flex gap-2">
+              <input type="url" id="pm-img-url" placeholder="https://... رابط صورة إضافية" class="min-w-0 flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm">
+              <button type="button" onclick="addProductImageUrl()" class="bg-brand-50 text-brand-700 font-bold px-3 py-2 rounded-xl text-xs">إضافة الرابط</button>
+            </div>
+            <p class="text-xs text-slate-500">الصور المرفوعة تُصغّر تلقائيًا قبل الحفظ. يمكن تغيير الصورة الرئيسية أو حذف أي صورة.</p>
           </div>
-          <div>
-            <label class="block text-xs font-bold text-slate-700 mb-1">أو ارفع صورة من جهازك:</label>
-            <input type="file" id="pm-img-file" accept="image/*" onchange="previewLocalProductImage(event)" class="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-brand-50 file:text-brand-700">
+          <div class="space-y-3 border border-slate-200 rounded-2xl p-3 sm:p-4">
+            <div class="flex justify-between items-center gap-2">
+              <label class="text-sm font-black text-slate-800">متغيرات المنتج</label>
+              <button type="button" onclick="addProductVariant()" class="bg-brand-50 text-brand-700 font-bold px-3 py-2 rounded-xl text-xs">+ إضافة لون أو مقاس</button>
+            </div>
+            <div id="pm-variants-list" class="space-y-2"></div>
+            <p class="text-xs text-slate-500">اكتب اسم المتغير والاختيارات، مثل «اللون: أحمر، أزرق» أو «المقاس: M، L».</p>
           </div>
         </div>
       `;
@@ -2852,7 +3128,10 @@
       `;
 
       openModal(title, '', 'fa-box', actions);
+      document.getElementById('modal-box-inner').classList.add('product-editor-open');
       document.getElementById('modal-message').innerHTML = formHtml;
+      renderProductImagePreviews();
+      renderProductVariantsEditor();
     }
 
     async function saveProductForm() {
@@ -2860,13 +3139,27 @@
       const category = document.getElementById('pm-category')?.value || 'عام';
       const price = parseFloat(document.getElementById('pm-price').value);
       const discountPercent = Number(document.getElementById('pm-discount').value);
-      const stock = parseInt(document.getElementById('pm-stock').value) || 10;
+      const stock = Number(document.getElementById('pm-stock').value);
       const desc = document.getElementById('pm-desc').value.trim();
-      const imgUrl = document.getElementById('pm-img-url').value.trim();
-      const finalImg = tempUploadedProductImage || imgUrl || 'https://placehold.co/500x500/059669/ffffff?text=Clovs';
+      const pendingUrl = document.getElementById('pm-img-url').value.trim();
+      if (productImagesLoading) return showToast('انتظر حتى ينتهي تجهيز الصور.', 'error');
+      if (pendingUrl) return showToast('اضغط «إضافة الرابط» لإضافته إلى صور المنتج قبل الحفظ.', 'error');
+      const images = tempProductImages.length ? [...tempProductImages] : [PRODUCT_PLACEHOLDER];
+      if (images.reduce((size, image) => size + image.length, images[0].length) > 12000000) {
+        showToast('حجم صور المنتج كبير. احذف بعض الصور أو ارفع نسخًا أصغر.', 'error');
+        return;
+      }
+      const variants = tempProductVariants.map(variant => ({
+        name: variant.name.trim(),
+        options: [...new Set((variant.options || []).map(option => option.trim()).filter(Boolean))]
+      }));
 
-      if (!name || !Number.isFinite(price) || price <= 0 || !Number.isInteger(discountPercent) || discountPercent < 0 || discountPercent >= 100) {
-        showToast('اكتب اسم المنتج وسعرًا أكبر من صفر، وخصمًا بين 0 و99٪', 'error');
+      if (!name || !Number.isFinite(price) || price <= 0 || !Number.isInteger(stock) || stock < 0 || !Number.isInteger(discountPercent) || discountPercent < 0 || discountPercent >= 100) {
+        showToast('اكتب الاسم والسعر والمخزون بشكل صحيح، والخصم بين 0 و99٪.', 'error');
+        return;
+      }
+      if (variants.some(variant => !variant.name || !variant.options.length) || new Set(variants.map(variant => variant.name.toLowerCase())).size !== variants.length) {
+        showToast('اكتب اسمًا مختلفًا لكل متغير وخيارًا واحدًا على الأقل له.', 'error');
         return;
       }
 
@@ -2885,11 +3178,15 @@
           discountPercent,
           stock,
           desc,
-          image: finalImg,
+          images,
+          image: images[0],
+          variants,
+          ...(editId ? {} : { soldCount: 0 }),
           source: editId ? 'website-edit' : 'website'
         });
 
-        tempUploadedProductImage = '';
+        tempProductImages = [];
+        tempProductVariants = [];
         appState.editingProductId = null;
         closeModal();
         showToast(editId ? 'تم تحديث المنتج وحفظه في Firebase' : 'تمت إضافة المنتج إلى Firebase بنجاح');
@@ -2930,7 +3227,7 @@
 
           ordersHtml += `
             <tr class="border-b border-slate-100 text-xs">
-              <td class="py-3 px-3 font-bold text-slate-900">${o.id}</td>
+              <td class="py-3 px-3 font-bold text-slate-900">${o.id}<br><button onclick="viewOrderItemsModal('${o.id}')" class="text-xs text-brand-700 underline mt-1">المنتجات والاختيارات</button></td>
               <td class="py-3 px-3 font-bold text-brand-700">${o.marketerName}</td>
               <td class="py-3 px-3">${o.customer.name}<br><span class="text-slate-400">${o.customer.phone} - ${o.customer.governorate}</span></td>
               <td class="py-3 px-3 font-black">${o.grandTotal} ج.م</td>
@@ -3065,6 +3362,17 @@
       openModal('إيصال التحويل الإلكتروني', `رقم الهاتف المحول منه: ${o.paymentProof.senderPhone || 'غير مسجل'}<br><div class="mt-3 max-h-80 overflow-y-auto rounded-xl"><img src="${o.paymentProof.screenshot}" class="w-full rounded-xl"></div>`);
     }
 
+    function viewOrderItemsModal(orderId) {
+      const order = appState.orders.find(item => item.id === orderId);
+      if (!order) return;
+      openModal(`منتجات الأوردر ${order.id}`, '');
+      document.getElementById('modal-message').innerHTML = (order.items || []).map(item => `
+        <div class="text-right p-3 border-b border-slate-100">
+          <strong>${escapeHtml(item.product?.name || 'منتج')}</strong> × ${Number(item.quantity) || 1}
+          <div class="text-xs text-brand-700 mt-1">${Object.entries(item.selectedVariants || {}).map(([name, value]) => `${escapeHtml(name)}: ${escapeHtml(value)}`).join(' • ') || 'بدون متغيرات'}</div>
+        </div>`).join('') || 'لا توجد منتجات في الأوردر.';
+    }
+
     async function updateOrderStatus(orderId, newStatus) {
       const o = appState.orders.find(x => x.id === orderId);
       if (!o?.firebaseKey || !['admin', 'super_admin'].includes(appState.currentUser?.role)) return;
@@ -3084,6 +3392,17 @@
       if (shouldCredit || shouldReverse) {
         changes[`orders/${o.firebaseKey}/commissionCredited`] = shouldCredit;
         changes[`marketerProfiles/${o.marketerUid}/balance`] = firebase.database.ServerValue.increment(shouldCredit ? amount : -amount);
+        const quantities = new Map();
+        (o.items || []).forEach(item => {
+          const id = item.product?.id;
+          if (typeof id === 'string' && /^[A-Za-z0-9_-]+$/.test(id) && appState.products.some(product => product.id === id)) {
+            quantities.set(id, (quantities.get(id) || 0) + (Number(item.quantity) || 0));
+          }
+        });
+        quantities.forEach((quantity, id) => {
+          if (shouldReverse && Number(appState.products.find(product => product.id === id)?.soldCount || 0) < quantity) return;
+          changes[`products/${id}/soldCount`] = firebase.database.ServerValue.increment(shouldCredit ? quantity : -quantity);
+        });
       }
       try {
         await firebaseDB.ref().update(changes);
@@ -3172,7 +3491,7 @@
         </div>`).join('');
 
       let uRows = '';
-      appState.usersList.forEach(u => {
+      appState.usersList.filter(u => u.firebaseMarketer || u.firebaseStaff).forEach(u => {
         let roleBadgeColor = 'bg-slate-100 text-slate-700';
         let roleName = u.role;
         if (u.role === 'super_admin') { roleBadgeColor = 'bg-purple-100 text-purple-800'; roleName = 'مدير أساسي'; }
@@ -3198,11 +3517,6 @@
               <button onclick="editUserModal('${u.id}')" class="bg-brand-50 hover:bg-brand-600 text-brand-700 hover:text-white font-bold px-3 py-1.5 rounded-xl transition text-xs flex items-center gap-1">
                 <i class="fa-solid fa-user-pen"></i> تحكم وتعديل
               </button>
-              ${!isSuper && !u.firebaseStaff && !u.firebaseMarketer ? `
-                <button onclick="deleteUser('${u.id}')" class="bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white font-bold px-2.5 py-1.5 rounded-xl transition text-xs" title="حذف الحساب">
-                  <i class="fa-solid fa-trash-can"></i>
-                </button>
-              ` : ''}
             </td>
           </tr>
         `;
@@ -3324,10 +3638,10 @@
           <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2 border-b border-slate-100 pb-3">
             <div>
               <h3 class="font-black text-slate-900 text-lg">إدارة جميع حسابات الموقع والتحكم بالعمولات</h3>
-              <p class="text-slate-500 text-xs">تحكم كامل في كلمات السر، أرقام الهواتف، الأدوار، والأرصدة المتاحة لسحب المسوقين.</p>
+              <p class="text-slate-500 text-xs">بيانات المسوقين متزامنة مع Firebase. تغيير كلمات المرور يتم من Firebase Authentication، وصلاحيات الفريق من القسم أعلاه.</p>
             </div>
             <span class="text-xs font-extrabold bg-brand-50 text-brand-700 px-3 py-1 rounded-full w-fit">
-              إجمالي الحسابات: ${appState.usersList.length}
+              إجمالي الحسابات: ${appState.usersList.filter(u => u.firebaseMarketer || u.firebaseStaff).length}
             </span>
           </div>
           <div class="overflow-x-auto">
@@ -3392,31 +3706,32 @@
       reader.readAsDataURL(file);
     }
 
-    function saveSiteBranding() {
+    async function saveSiteBranding() {
       const name = document.getElementById('cust-app-name').value.trim();
       const logo = document.getElementById('cust-logo-url').value.trim();
 
-      appState.siteTheme.appName = name || 'Clovs';
-      appState.siteTheme.logoUrl = logo;
-
-      localStorage.setItem('clovs_theme', JSON.stringify(appState.siteTheme));
-      applyThemeToDOM();
-      showToast('تم تطبيق هوية الموقع بنجاح');
+      try {
+        await brandingRef.set({ appName: name || 'Clovs', logoUrl: logo });
+        showToast('تم حفظ هوية الموقع في Firebase');
+      } catch (error) {
+        console.error('[Clovs Firebase] branding save failed:', error);
+        showToast('فشل حفظ هوية الموقع في Firebase', 'error');
+      }
     }
 
-    function saveContactSettings() {
+    async function saveContactSettings() {
       const phone = document.getElementById('cust-contact-phone')?.value.trim();
       const whatsapp = document.getElementById('cust-contact-whatsapp')?.value.trim();
       const waGroup = document.getElementById('cust-contact-wagroup')?.value.trim();
       const email = document.getElementById('cust-contact-email')?.value.trim();
 
-      if (phone) appState.contactInfo.phone = phone;
-      if (whatsapp) appState.contactInfo.whatsapp = whatsapp;
-      if (waGroup) appState.contactInfo.whatsappGroup = waGroup;
-      if (email) appState.contactInfo.email = email;
-
-      showToast('تم حفظ وتحديث بيانات التواصل بنجاح');
-      if (appState.currentView === 'contact-support') renderContactSupportView();
+      try {
+        await contactInfoRef.set({ ...appState.contactInfo, phone, whatsapp, whatsappGroup: waGroup, email });
+        showToast('تم حفظ بيانات التواصل في Firebase');
+      } catch (error) {
+        console.error('[Clovs Firebase] contact save failed:', error);
+        showToast('فشل حفظ بيانات التواصل في Firebase', 'error');
+      }
     }
 
     let tempSlideImage = '';
@@ -3570,12 +3885,7 @@
         const backupData = {
           version: '1.0',
           exportDate: new Date().toISOString(),
-          usersList: appState.usersList,
-          products: appState.products,
           categories: appState.categories,
-          orders: appState.orders,
-          withdrawRequests: appState.withdrawRequests,
-          registrationRequests: appState.registrationRequests,
           slides: appState.slides,
           socialLinks: appState.socialLinks,
           shippingRates: appState.shippingRates,
@@ -3593,7 +3903,7 @@
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        showToast('تم تصدير وتحميل النسخة الاحتياطية بنجاح!');
+        showToast('تم تنزيل نسخة إعدادات الموقع. الحسابات والطلبات والأرصدة تُدار داخل Firebase وليست جزءاً من هذا الملف.');
       } catch (err) {
         showToast('حدث خطأ أثناء تنزيل النسخة الاحتياطية', 'error');
       }
@@ -3611,12 +3921,8 @@
             throw new Error('Invalid backup file');
           }
 
-          if (Array.isArray(data.usersList)) appState.usersList = data.usersList;
-          if (Array.isArray(data.products)) appState.products = data.products;
-          if (Array.isArray(data.categories)) appState.categories = data.categories;
-          if (Array.isArray(data.orders)) appState.orders = data.orders;
-          if (Array.isArray(data.withdrawRequests)) appState.withdrawRequests = data.withdrawRequests;
-          if (Array.isArray(data.registrationRequests)) appState.registrationRequests = data.registrationRequests;
+          if (firebaseAuth.currentUser?.uid !== FIREBASE_ADMIN_UID) throw new Error('Only the main administrator may restore settings');
+          if (Array.isArray(data.categories)) await categoriesRef.set(data.categories.filter(x => typeof x === 'string'));
           if (Array.isArray(data.slides) && data.slides.length) {
             await slidesRef.set(data.slides);
           }
@@ -3629,24 +3935,12 @@
             }
             await socialLinksRef.set(links);
           }
-          if (data.shippingRates && typeof data.shippingRates === 'object') appState.shippingRates = data.shippingRates;
-          if (data.contactInfo && typeof data.contactInfo === 'object') appState.contactInfo = data.contactInfo;
+          if (data.shippingRates && typeof data.shippingRates === 'object') await shippingRatesRef.set(data.shippingRates);
+          if (data.contactInfo && typeof data.contactInfo === 'object') await contactInfoRef.set(data.contactInfo);
           if (data.siteTheme && typeof data.siteTheme === 'object') {
-            appState.siteTheme = data.siteTheme;
-            localStorage.setItem('clovs_theme', JSON.stringify(appState.siteTheme));
+            await brandingRef.set({ appName: String(data.siteTheme.appName || 'Clovs'), logoUrl: String(data.siteTheme.logoUrl || '') });
           }
-
-          if (appState.currentUser) {
-            const freshUser = appState.usersList.find(u => u.id === appState.currentUser.id);
-            if (freshUser) appState.currentUser = freshUser;
-          }
-
-          applyThemeToDOM();
-          updateHeaderAuthUI();
-          updateFavBadge();
-          updateCartBadge();
-          renderSuperCustomizerView();
-          showToast('تمت استعادة البيانات وحفظ السلايدر وروابط السوشيال');
+          showToast('تمت استعادة إعدادات الموقع والتصنيفات. الطلبات والحسابات والمنتجات لا تُستورد من الملف.');
         } catch (err) {
           console.error('[Clovs] backup restore failed:', err);
           showToast('تعذر استعادة النسخة بالكامل. تحقق من الملف وصلاحيات قاعدة البيانات.', 'error');
@@ -3658,85 +3952,50 @@
     function editUserModal(userId) {
       const user = appState.usersList.find(u => u.id === userId);
       if (!user) return;
-      if (user.firebaseStaff || user.firebaseMarketer) {
-        showToast('بيانات هذا الحساب تُدار من Firebase Authentication', 'info');
+      if (user.firebaseStaff) {
+        showToast('صلاحية عضو الفريق تُدار من قسم صلاحيات الفريق، وكلمة المرور من Firebase Authentication', 'info');
         return;
       }
-
-      const isSuper = user.role === 'super_admin';
-
+      if (!user.firebaseMarketer || !user.uid || !['admin', 'super_admin'].includes(appState.currentUser?.role)) {
+        showToast('لا يمكن تعديل حساب غير متزامن مع Firebase', 'error');
+        return;
+      }
       const html = `
         <div class="space-y-3 text-right">
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label class="block text-xs font-bold text-slate-700 mb-1">الاسم الكامل</label>
-              <input type="text" id="edit-user-name" value="${user.name || ''}" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-500">
-            </div>
-            <div>
-              <label class="block text-xs font-bold text-slate-700 mb-1">رقم الهاتف</label>
-              <input type="tel" id="edit-user-phone" value="${user.phone || ''}" placeholder="010XXXXXXXX" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-500">
-            </div>
-          </div>
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label class="block text-xs font-bold text-slate-700 mb-1">اسم المستخدم (Username)</label>
-              <input type="text" id="edit-user-username" value="${user.username || ''}" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-500 font-mono">
-            </div>
-            <div>
-              <label class="block text-xs font-bold text-slate-700 mb-1">كلمة المرور</label>
-              <input type="text" id="edit-user-password" value="${user.password || ''}" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-500 font-mono">
-            </div>
-          </div>
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label class="block text-xs font-bold text-slate-700 mb-1">الدور الوظيفي</label>
-              <select id="edit-user-role" ${isSuper ? 'disabled' : ''} class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-500">
-                <option value="marketer" ${user.role === 'marketer' ? 'selected' : ''}>مسوق (Marketer)</option>
-                <option value="product_manager" ${user.role === 'product_manager' ? 'selected' : ''}>مضيف منتجات (Product Manager)</option>
-                <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>مدير (Admin)</option>
-                <option value="super_admin" ${user.role === 'super_admin' ? 'selected' : ''}>مدير أساسي (Super Admin)</option>
-              </select>
-            </div>
-            <div>
-              <label class="block text-xs font-bold text-slate-700 mb-1">حالة الحساب</label>
-              <select id="edit-user-status" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-500">
-                <option value="approved" ${user.status === 'approved' ? 'selected' : ''}>نشط ومفعل (Approved)</option>
-                <option value="pending" ${user.status === 'pending' ? 'selected' : ''}>قيد المراجعة (Pending)</option>
-                <option value="suspended" ${user.status === 'suspended' ? 'selected' : ''}>محظور / معلق (Suspended)</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="p-3 bg-brand-50/70 rounded-2xl border border-brand-100 space-y-2">
-            <div class="flex justify-between items-center">
-              <label class="text-xs font-black text-brand-900">رصيد أرباح وعمولة المسوق المتاح للسحب (ج.م):</label>
-              <span class="text-xs font-mono font-black text-brand-700">الحالي: ${user.balance || 0} ج.م</span>
-            </div>
-            <div class="flex items-center gap-2">
-              <input type="number" id="edit-user-balance" value="${user.balance || 0}" step="10" min="0" class="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-black text-emerald-600 focus:outline-none focus:border-brand-500 shadow-inner">
-              <button type="button" onclick="document.getElementById('edit-user-balance').value = (parseFloat(document.getElementById('edit-user-balance').value) || 0) + 100" class="bg-emerald-600 text-white text-xs font-bold px-3 py-2 rounded-xl hover:bg-emerald-700 transition">+100</button>
-              <button type="button" onclick="document.getElementById('edit-user-balance').value = Math.max(0, (parseFloat(document.getElementById('edit-user-balance').value) || 0) - 100)" class="bg-rose-600 text-white text-xs font-bold px-3 py-2 rounded-xl hover:bg-rose-700 transition">-100</button>
-              <button type="button" onclick="document.getElementById('edit-user-balance').value = 0" class="bg-slate-200 text-slate-700 text-xs font-bold px-2 py-2 rounded-xl hover:bg-slate-300 transition" title="تصفير الرصيد">صفر</button>
-            </div>
-            <p class="text-[10px] text-slate-500">يمكنك تعديل رصيد المسوق مباشرة هنا وسيتمكن فوراً من سحبه أو رؤيته في لوحة تحكمه.</p>
-          </div>
-
-          <div>
-            <label class="block text-xs font-bold text-slate-700 mb-1">بيانات السحب المسجلة (رقم محفظة أو إنستاباي)</label>
-            <input type="text" id="edit-user-payout" value="${user.payoutDetails || ''}" placeholder="محفظة كاش أو InstaPay..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-500">
-          </div>
-        </div>
-      `;
-
-      const actions = `
-        <button onclick="saveUserEdit('${user.id}')" class="bg-brand-600 hover:bg-brand-700 text-white font-bold px-6 py-2.5 rounded-xl transition text-sm">حفظ التغييرات</button>
-        <button onclick="closeModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-6 py-2.5 rounded-xl transition text-sm">إلغاء</button>
-      `;
-
-      openModal(`التحكم في حساب: ${user.name}`, '', 'fa-user-gear', actions);
+          <label class="block text-xs font-bold">الاسم<input id="edit-marketer-name" maxlength="100" value="${escapeHtml(user.name || '')}" class="w-full border rounded-xl p-2 mt-1"></label>
+          <label class="block text-xs font-bold">الهاتف<input id="edit-marketer-phone" maxlength="30" value="${escapeHtml(user.phone || '')}" class="w-full border rounded-xl p-2 mt-1"></label>
+          <label class="block text-xs font-bold">بيانات السحب<input id="edit-marketer-payout" maxlength="160" value="${escapeHtml(user.payoutDetails || '')}" class="w-full border rounded-xl p-2 mt-1"></label>
+          <label class="block text-xs font-bold">الحالة<select id="edit-marketer-status" class="w-full border rounded-xl p-2 mt-1">
+            <option value="approved" ${user.status === 'approved' ? 'selected' : ''}>نشط</option>
+            <option value="suspended" ${user.status === 'suspended' ? 'selected' : ''}>موقوف</option>
+          </select></label>
+          <p class="text-xs text-slate-500">اسم الدخول وكلمة المرور من Firebase Authentication. تسوية الأرصدة المالية تتطلب خدمة خادم موثوقة.</p>
+        </div>`;
+      openModal(`تعديل بيانات ${escapeHtml(user.name)}`, '', 'fa-user-gear',
+        `<button onclick="saveFirebaseMarketerEdit('${user.uid}')" class="bg-brand-600 text-white font-bold px-6 py-2 rounded-xl">حفظ في Firebase</button><button onclick="closeModal()" class="bg-slate-100 px-6 py-2 rounded-xl">إلغاء</button>`);
       document.getElementById('modal-message').innerHTML = html;
+      return;
+
+    }
+
+    async function saveFirebaseMarketerEdit(uid) {
+      if (!['admin', 'super_admin'].includes(appState.currentUser?.role) || !/^[A-Za-z0-9_-]{1,128}$/.test(uid)) return;
+      const name = document.getElementById('edit-marketer-name')?.value.trim();
+      const phone = document.getElementById('edit-marketer-phone')?.value.trim();
+      const payoutDetails = document.getElementById('edit-marketer-payout')?.value.trim();
+      const status = document.getElementById('edit-marketer-status')?.value;
+      if (!name || !phone || !['approved', 'suspended'].includes(status)) {
+        showToast('أدخل الاسم والهاتف والحالة بشكل صحيح', 'error');
+        return;
+      }
+      try {
+        await marketerProfilesRef.child(uid).update({ name, phone, payoutDetails, status });
+        closeModal();
+        showToast('تم حفظ بيانات المسوق في Firebase');
+      } catch (error) {
+        console.error('[Clovs Firebase] marketer edit failed:', error);
+        showToast('فشل حفظ بيانات المسوق. راجع قواعد Firebase', 'error');
+      }
     }
 
     function saveUserEdit(userId) {
