@@ -3,7 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title id="html-page-title">Clovs | منصة الدروبشيبينغ الذكية</title>
+  <title id="html-page-title">Clovs | كلوفز للدروبشيبينج والتسويق بالعمولة في مصر</title>
+  <meta name="description" content="Clovs كلوفز منصة دروبشيبينج في مصر للمسوقين: اختر منتجات للبيع أونلاين، حدد عمولتك، تابع الأوردرات والشحن، واستلم أرباحك بعد التسليم. تعرف على طريقة العمل وابدأ التسويق.">
+  <meta name="robots" content="index,follow,max-image-preview:large">
+  <link rel="icon" type="image/png" sizes="96x96" href="favicon.png">
+  <link rel="apple-touch-icon" href="favicon.png">
+  <link rel="canonical" href="./">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="ar_EG">
+  <meta property="og:site_name" content="Clovs | كلوفز">
+  <meta property="og:title" content="Clovs | منصة دروبشيبينج وتسويق بالعمولة في مصر">
+  <meta property="og:description" content="منتجات للبيع أونلاين، متابعة للأوردرات، وعمولة تُضاف للمسوق بعد تسليم الطلب.">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Clovs | كلوفز للدروبشيبينج في مصر">
+  <meta name="twitter:description" content="ابدأ التسويق للمنتجات، تابع طلباتك وأرباحك عبر منصة Clovs.">
 
   <!-- Google Fonts: Cairo -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -20,6 +33,7 @@
   <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
 
   <script>
     const defaultPrimaryColor = '#059669';
@@ -28,7 +42,15 @@
     function getStoredTheme() {
       try {
         const saved = localStorage.getItem('clovs_theme');
-        if (saved) return JSON.parse(saved);
+        if (saved) {
+          const value = JSON.parse(saved);
+          if (value && typeof value === 'object') return {
+            primary: /^#[a-f0-9]{6}$/i.test(value.primary) ? value.primary : defaultPrimaryColor,
+            action: /^#[a-f0-9]{6}$/i.test(value.action) ? value.action : defaultActionColor,
+            appName: typeof value.appName === 'string' && value.appName.trim() ? value.appName.slice(0, 80) : 'Clovs',
+            logoUrl: typeof value.logoUrl === 'string' ? value.logoUrl : ''
+          };
+        }
       } catch(e) {}
       return { primary: defaultPrimaryColor, action: defaultActionColor, appName: 'Clovs', logoUrl: '' };
     }
@@ -79,6 +101,7 @@
     .product-gallery-thumb { border:2px solid transparent; transition:border-color .2s ease, transform .2s ease; }
     .product-gallery-thumb:hover, .product-gallery-thumb.is-active { border-color:#059669; transform:translateY(-2px); }
     .product-card.is-best-seller .product-highlight { animation:highlightPulse 3s ease-in-out infinite; }
+    .product-card:focus-visible { outline:3px solid #059669; outline-offset:3px; }
     @keyframes highlightPulse { 50% { box-shadow:0 0 0 5px rgba(245,158,11,.15); } }
     #modal-box-inner { max-height:min(90dvh, 900px); overflow-y:auto; }
     #modal-box-inner.product-editor-open { max-width:42rem !important; }
@@ -260,6 +283,10 @@
       #custom-modal #modal-box-inner { max-height:calc(100dvh - 2rem); overflow-y:auto; }
       #view-auth > div, #view-staff-login > div { padding:1.25rem; }
       .app-view > .bg-white { padding:1.25rem; }
+      #home-products-grid, #products-catalog-grid, #favorites-grid { gap:.75rem; }
+      .product-card > .relative.bg-slate-100 { height:clamp(180px, 58vw, 260px); }
+      .product-card > .p-5, .product-card > .p-6 { padding:1rem; gap:.75rem; }
+      .product-card h3, .product-card h4 { font-size:1rem; line-height:1.5; overflow-wrap:anywhere; }
     }
     @media (min-width:640px) and (max-width:1279px) {
       #header-inner { gap:1rem; }
@@ -622,6 +649,17 @@
     <div id="view-admin-dashboard" class="app-view space-y-6 hidden fade-in"></div>
     <div id="view-super-customizer" class="app-view space-y-6 hidden fade-in"></div>
 
+    <!-- ABOUT: available from the side menu for all visitors -->
+    <div id="view-about" class="app-view hidden fade-in">
+      <div class="max-w-4xl mx-auto">
+        <section class="bg-white rounded-3xl p-6 sm:p-8 border border-slate-100 shadow-sm space-y-4" aria-labelledby="about-title">
+          <h2 id="about-title" class="text-xl sm:text-2xl font-black text-slate-900">حول Clovs كلوفز</h2>
+          <p class="text-slate-600 text-sm leading-8">Clovs منصة دروبشيبينج وتسويق منتجات أونلاين في مصر. تقدر تتصفح المنتجات المتاحة، تحدد عمولتك عند إنشاء أوردر للعميل، وتتابع حالة الطلب من حساب المسوق. بتضاف العمولة إلى رصيدك بعد تسجيل الأوردر «تم التسليم» من الإدارة، وتقدر تقدم طلب سحب حسب الرصيد المتاح.</p>
+          <p class="text-slate-600 text-sm leading-8">نظام Clovs بيخلي المسوق يختار المنتج ويقدم طلب العميل من حسابه، بدل نظام روابط الإحالة المعتاد في بعض برامج الأفلييت. السعر النهائي يظهر قبل إرسال الأوردر ويشمل العمولة والشحن حسب المحافظة.</p>
+        </section>
+      </div>
+    </div>
+
     <div id="view-social" class="app-view space-y-7 hidden fade-in">
       <div class="rounded-3xl bg-slate-900 text-white p-8 sm:p-12 relative overflow-hidden">
         <div class="absolute -left-16 -top-20 w-64 h-64 bg-brand-500/20 rounded-full blur-3xl pointer-events-none"></div>
@@ -732,7 +770,6 @@
       selectedCategoryFilter: 'all',
       orders: [],
       withdrawRequests: [],
-      registrationRequests: [],
       slides: [
         { id: '1', title: 'ابدأ مشروع الدروبشيبينغ الخاص بك اليوم', desc: 'اختر منتجاتك، ضع عموتك الثابتة، وابدأ بتحقيق أرباح حقيقية وفورية.', tag: 'فرصة نمو حقيقية', image: 'https://images.unsplash.com/photo-1556742049-0a67d553b279?auto=format&fit=crop&w=1200&q=80' },
         { id: '2', title: 'معاينة مجانية للشحنة وأرباح مضمونة', desc: 'عمولاتك الثابتة تُضاف لرصيدك فور تسليم الأوردر للعميل بنجاح.', tag: 'دفع وسحب آمن', image: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1200&q=80' }
@@ -742,10 +779,12 @@
         phone: '01020327694',
         email: 'support@clovs.eg',
         whatsapp: '01020327694',
+        paymentPhone: '01020327694',
         whatsappGroup: 'https://chat.whatsapp.com/example-marketers-group',
         hours: 'متاحون طوال أيام الأسبوع من 10 صباحاً حتى 10 مساءً'
       },
       socialLinks: { facebook: '', instagram: '', tiktok: '' },
+      publicLeaderboard: [],
       staffRoles: {},
       activeCart: {
         items: [],
@@ -779,11 +818,14 @@
     }
 
     const firebaseDB = firebase.database();
+    const secureFunctions = firebase.app().functions('us-central1');
+    const secureCall = (name, data) => secureFunctions.httpsCallable(name)(data);
     const firebaseAuth = firebase.auth();
     const FIREBASE_ADMIN_UID = 'zAeUYXEN3jS18kBC3QXZOVcedk12';
     const productsRef = firebaseDB.ref('products');
     const slidesRef = firebaseDB.ref('siteSettings/slides');
     const socialLinksRef = firebaseDB.ref('siteSettings/socialLinks');
+    const publicLeaderboardRef = firebaseDB.ref('publicLeaderboard');
     const categoriesRef = firebaseDB.ref('catalogCategories');
     const shippingRatesRef = firebaseDB.ref('siteSettings/shippingRates');
     const contactInfoRef = firebaseDB.ref('siteSettings/contactInfo');
@@ -799,7 +841,10 @@
     let ordersListenerRef = null;
     let ordersListenerCallback = null;
     let ordersListenerUid = null;
+    let ordersListenerRole = null;
     let knownOrderKeys = null;
+    let publishedLeaderboardHash = null;
+    let leaderboardPublishQueue = Promise.resolve();
     let firebaseProductsListenerStarted = false;
     let staffRolesListenerStarted = false;
     let currentStaffRoleRef = null;
@@ -820,8 +865,13 @@
       appState.currentUser = staff;
       updateHeaderAuthUI();
       updateSidebarContent();
-      startOrdersSync(authUser, role);
-      startWithdrawRequestsSync(authUser, role);
+      if (role === 'product_manager') {
+        stopOrdersSync();
+        stopWithdrawRequestsSync();
+      } else {
+        startOrdersSync(authUser, role);
+        startWithdrawRequestsSync(authUser, role);
+      }
       return true;
     }
 
@@ -852,6 +902,12 @@
           return;
         }
         if (firebaseAuth.currentUser?.uid === authUser.uid && appState.currentUser?.role !== role) {
+          if (role === 'product_manager' && marketerProfilesSyncStarted) {
+            marketerProfilesRef.off('value');
+            marketerProfilesSyncStarted = false;
+            appState.usersList = appState.usersList.filter(user => !user.firebaseMarketer);
+          }
+          if (role === 'admin') startMarketerProfilesSync();
           setFirebaseStaffSession(authUser, role);
           if (['admin-dashboard', 'product-manager'].includes(appState.currentView)) switchView(role === 'admin' ? 'admin-dashboard' : 'product-manager');
         }
@@ -887,7 +943,12 @@
       currentMarketerProfileRef.on('value', snapshot => {
         if (firebaseAuth.currentUser?.uid !== authUser.uid) return;
         const profile = snapshot.val();
-        if (!profile || appState.currentUser?.role !== 'marketer') return;
+        if (!profile) {
+          firebaseAuth.signOut();
+          showToast('ملف حساب المسوق لم يعد متاحاً', 'error');
+          return;
+        }
+        if (appState.currentUser?.role !== 'marketer') return;
         if (profile.status !== 'approved') {
           firebaseAuth.signOut();
           showToast('تم إيقاف حساب المسوق', 'error');
@@ -942,15 +1003,18 @@
       ordersListenerRef = null;
       ordersListenerCallback = null;
       ordersListenerUid = null;
+      ordersListenerRole = null;
       knownOrderKeys = null;
+      publishedLeaderboardHash = null;
       appState.orders = [];
       updateAdminOrderBadge();
     }
 
     function startOrdersSync(authUser, role) {
-      if (ordersListenerUid === authUser.uid && ordersListenerRef) return;
+      if (ordersListenerUid === authUser.uid && ordersListenerRole === role && ordersListenerRef) return;
       stopOrdersSync();
       ordersListenerUid = authUser.uid;
+      ordersListenerRole = role;
       const isAdmin = role === 'admin' || role === 'super_admin';
       const ref = isAdmin ? ordersRef : ordersRef.orderByChild('marketerUid').equalTo(authUser.uid);
       ordersListenerRef = ref;
@@ -965,6 +1029,7 @@
         appState.orders = Object.entries(raw).map(([firebaseKey, order]) => ({
           ...order, firebaseKey
         })).sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
+        if (isAdmin) publishLeaderboardFromOrders();
         updateAdminOrderBadge();
         if (appState.currentView === 'admin-dashboard') renderAdminDashboard();
         if (appState.currentView === 'marketer-dashboard') renderMarketerDashboard();
@@ -974,6 +1039,24 @@
         showToast('تعذر تحميل الأوردرات. أضف قواعد orders إلى Firebase.', 'error');
       });
       updateAdminOrderBadge();
+    }
+
+    function publishLeaderboardFromOrders() {
+      const summary = {};
+      appState.orders.forEach(order => {
+        const uid = order.marketerUid;
+        if (order.status !== 'delivered' || !/^[A-Za-z0-9_-]{1,128}$/.test(uid || '')) return;
+        if (!summary[uid]) summary[uid] = { name: String(order.marketerName || 'مسوق').slice(0, 100), count: 0 };
+        summary[uid].count++;
+      });
+      const hash = JSON.stringify(summary);
+      if (hash === publishedLeaderboardHash) return;
+      publishedLeaderboardHash = hash;
+      leaderboardPublishQueue = leaderboardPublishQueue.catch(() => {}).then(() => publicLeaderboardRef.set(summary)).catch(error => {
+        if (publishedLeaderboardHash === hash) publishedLeaderboardHash = null;
+        console.error('[Clovs Firebase] leaderboard publish failed:', error);
+      });
+      return leaderboardPublishQueue;
     }
 
     function stopWithdrawRequestsSync() {
@@ -1045,6 +1128,13 @@
         }
         if (appState.currentUser?.firebaseStaff || appState.currentUser?.firebaseMarketer) {
           appState.currentUser = null;
+          appState.usersList = appState.usersList.filter(user => !user.firebaseMarketer && !user.firebaseStaff);
+          appState.activeCart.items = [];
+          appState.activeCart.customer = { name: '', phone: '', address: '', governorate: 'القاهرة' };
+          appState.activeCart.paymentProof = { screenshot: '', senderPhone: '' };
+          appState.favorites = [];
+          ['view-admin-dashboard', 'view-super-customizer', 'view-product-manager', 'view-marketer-dashboard', 'view-marketer-withdraw']
+            .forEach(id => document.getElementById(id)?.replaceChildren());
           updateHeaderAuthUI();
           updateSidebarContent();
           updateAdminOrderBadge();
@@ -1068,10 +1158,21 @@
 
     function firebaseSnapshotToProducts(snapshot) {
       const raw = snapshot.val() || {};
-      return Object.entries(raw).map(([key, value]) => ({
-        ...(value || {}),
-        id: (value && value.id) || key
-      })).sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
+      return Object.entries(raw)
+        .filter(([key, value]) => /^[A-Za-z0-9_-]+$/.test(key) && value &&
+          typeof value.name === 'string' && value.name.trim() &&
+          Number.isFinite(Number(value.price)) && Number(value.price) > 0)
+        .map(([key, value]) => ({
+          ...value,
+          id: key,
+          name: value.name.slice(0, 200),
+          desc: typeof value.desc === 'string' ? value.desc : '',
+          category: typeof value.category === 'string' ? value.category : 'عام',
+          price: Number(value.price),
+          stock: value.stock == null ? 10 : Number.isInteger(Number(value.stock)) && Number(value.stock) >= 0 ? Number(value.stock) : 0,
+          soldCount: Number.isFinite(Number(value.soldCount)) ? Number(value.soldCount) : 0
+        }))
+        .sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
     }
 
     function refreshProductViewsAfterFirebaseSync() {
@@ -1089,11 +1190,19 @@
 
       productsRef.on('value', (snapshot) => {
         appState.products = firebaseSnapshotToProducts(snapshot);
+        const originalCartLength = appState.activeCart.items.length;
+        appState.activeCart.items = appState.activeCart.items.filter(item =>
+          appState.products.some(product => product.id === item.product?.id));
         appState.activeCart.items.forEach(item => {
           const current = appState.products.find(p => p.id === item.product.id);
           if (current) item.product = current;
         });
+        if (originalCartLength !== appState.activeCart.items.length) {
+          updateCartBadge();
+          showToast('أُزيل منتج لم يعد متاحاً من السلة', 'info');
+        }
         refreshProductViewsAfterFirebaseSync();
+        if (appState.currentView === 'cart') renderCartView();
         console.info(`[Clovs Firebase] synced ${appState.products.length} products`);
       }, (error) => {
         console.error('[Clovs Firebase] products read failed:', error);
@@ -1102,8 +1211,14 @@
     }
 
     function startFirebaseSiteSettingsSync() {
+      publicLeaderboardRef.on('value', snapshot => {
+        appState.publicLeaderboard = Object.entries(snapshot.val() || {}).map(([uid, value]) => ({ uid, ...value }));
+        if (appState.currentView === 'top-marketers') renderTopMarketersView();
+      }, error => console.error('[Clovs Firebase] leaderboard read failed:', error));
       categoriesRef.on('value', snapshot => {
         if (Array.isArray(snapshot.val())) appState.categories = snapshot.val().filter(x => typeof x === 'string');
+        if (appState.selectedCategoryFilter !== 'all' &&
+            !appState.categories.includes(appState.selectedCategoryFilter)) appState.selectedCategoryFilter = 'all';
         if (appState.currentView === 'product-manager') renderProductManagerDashboard();
         if (appState.currentView === 'products') renderProductsCatalog();
       }, error => console.error('[Clovs Firebase] categories read failed:', error));
@@ -1178,7 +1293,11 @@
       const icon = type === 'success' ? 'fa-circle-check' : type === 'error' ? 'fa-triangle-exclamation' : 'fa-circle-info';
       
       toast.className = `${bgColors} px-5 py-3.5 rounded-2xl shadow-xl flex items-center gap-3 text-sm font-bold pointer-events-auto transform translate-y-2 opacity-0 transition-all duration-300`;
-      toast.innerHTML = `<i class="fa-solid ${icon} text-lg"></i><span>${message}</span>`;
+      const symbol = document.createElement('i');
+      symbol.className = `fa-solid ${icon} text-lg`;
+      const label = document.createElement('span');
+      label.textContent = String(message);
+      toast.append(symbol, label);
       container.appendChild(toast);
 
       setTimeout(() => toast.classList.remove('translate-y-2', 'opacity-0'), 10);
@@ -1188,7 +1307,9 @@
       }, 3500);
     }
 
+    let modalCloseTimer = null;
     function openModal(title, message, iconClass = 'fa-circle-check', customActionsHTML = null) {
+      if (modalCloseTimer) clearTimeout(modalCloseTimer);
       document.getElementById('modal-title').innerText = title;
       document.getElementById('modal-message').innerText = message;
       document.getElementById('modal-icon').innerHTML = `<i class="fa-solid ${iconClass}"></i>`;
@@ -1215,7 +1336,10 @@
       const box = document.getElementById('modal-box-inner');
       box.classList.remove('scale-100', 'opacity-100');
       box.classList.add('scale-95', 'opacity-0');
-      setTimeout(() => modal.classList.add('hidden'), 200);
+      modalCloseTimer = setTimeout(() => {
+        modal.classList.add('hidden');
+        modalCloseTimer = null;
+      }, 200);
     }
 
     let sidebarCloseTimer = null;
@@ -1274,7 +1398,7 @@
         dashboardView = 'marketer-dashboard';
       }
 
-      const initial = (user.name || 'U').trim().charAt(0).toUpperCase();
+      const initial = escapeHtml((user.name || 'U').trim().charAt(0).toUpperCase());
 
       container.innerHTML = `
         <div class="relative inline-block text-right" id="user-profile-menu-container">
@@ -1283,7 +1407,7 @@
               ${initial}
             </div>
             <div class="hidden sm:block text-right">
-              <div class="text-xs font-extrabold text-slate-900 leading-tight max-w-[110px] truncate">${user.name}</div>
+              <div class="text-xs font-extrabold text-slate-900 leading-tight max-w-[110px] truncate">${escapeHtml(user.name)}</div>
               <div class="text-[10px] text-brand-600 font-bold leading-tight">${roleBadge}</div>
             </div>
             <i class="fa-solid fa-chevron-down text-xs text-slate-400 mr-1 hidden sm:inline"></i>
@@ -1292,7 +1416,7 @@
           <div id="user-dropdown-menu" class="hidden absolute left-0 sm:right-auto mt-2 w-56 rounded-2xl bg-white shadow-2xl border border-slate-100 py-2 z-50 fade-in">
             <div class="px-4 py-3 border-b border-slate-100">
               <p class="text-xs text-slate-400 font-bold">الحساب الحالي:</p>
-              <p class="text-sm font-black text-slate-900 truncate mt-0.5">${user.name}</p>
+              <p class="text-sm font-black text-slate-900 truncate mt-0.5">${escapeHtml(user.name)}</p>
               <span class="inline-block mt-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-brand-50 text-brand-700">${roleBadge}</span>
             </div>
 
@@ -1345,13 +1469,14 @@
       const theme = appState.siteTheme;
       document.getElementById('header-brand-title').innerText = theme.appName;
       document.getElementById('sidebar-brand-name').innerText = theme.appName;
-      document.getElementById('html-page-title').innerText = `${theme.appName} | منصة الدروبشيبينغ الذكية`;
+      document.getElementById('html-page-title').innerText = `${theme.appName} | دروبشيبينج وتسويق بالعمولة في مصر`;
       
       const logoBox = document.getElementById('header-logo-box');
       const sbLogo = document.getElementById('sidebar-logo-container');
       if (theme.logoUrl) {
-        logoBox.innerHTML = `<img src="${theme.logoUrl}" class="w-full h-full object-cover rounded-2xl" onerror="this.src='https://placehold.co/100x100/10b981/ffffff?text=C'">`;
-        sbLogo.innerHTML = `<img src="${theme.logoUrl}" class="w-full h-full object-cover rounded-xl" onerror="this.src='https://placehold.co/100x100/10b981/ffffff?text=C'">`;
+        const logoUrl = escapeHtml(safeImageUrl(theme.logoUrl, 'https://placehold.co/100x100/10b981/ffffff?text=C'));
+        logoBox.innerHTML = `<img src="${logoUrl}" class="w-full h-full object-cover rounded-2xl" onerror="this.src='https://placehold.co/100x100/10b981/ffffff?text=C'">`;
+        sbLogo.innerHTML = `<img src="${logoUrl}" class="w-full h-full object-cover rounded-xl" onerror="this.src='https://placehold.co/100x100/10b981/ffffff?text=C'">`;
       } else {
         logoBox.innerText = theme.appName.charAt(0).toUpperCase();
         sbLogo.innerText = theme.appName.charAt(0).toUpperCase();
@@ -1366,6 +1491,18 @@
     }
 
     function switchView(viewName, param = null) {
+      const role = appState.currentUser?.role;
+      const allowed = {
+        'super-customizer': ['super_admin'],
+        'admin-dashboard': ['super_admin', 'admin'],
+        'product-manager': ['super_admin', 'admin', 'product_manager'],
+        'marketer-dashboard': ['marketer'],
+        'marketer-withdraw': ['marketer']
+      };
+      if (allowed[viewName] && !allowed[viewName].includes(role)) {
+        viewName = appState.currentUser ? 'home' : 'auth';
+        param = null;
+      }
       appState.currentView = viewName;
       updateDesktopNavigation();
       if (param !== null) appState.selectedProductId = param;
@@ -1434,6 +1571,9 @@
         <button onclick="switchView('top-marketers')" class="w-full text-right px-4 py-3 rounded-xl font-bold text-slate-700 hover:bg-slate-50 hover:text-brand-600 transition flex items-center gap-3 text-sm">
           <i class="fa-solid fa-trophy text-brand-600 w-5"></i> أفضل المسوقين
         </button>
+        <button onclick="switchView('about')" class="w-full text-right px-4 py-3 rounded-xl font-bold text-slate-700 hover:bg-slate-50 hover:text-brand-600 transition flex items-center gap-3 text-sm">
+          <i class="fa-solid fa-circle-info text-brand-600 w-5"></i> حول
+        </button>
         <button onclick="switchView('shipping-rates')" class="w-full text-right px-4 py-3 rounded-xl font-bold text-slate-700 hover:bg-slate-50 hover:text-brand-600 transition flex items-center gap-3 text-sm">
           <i class="fa-solid fa-truck text-brand-600 w-5"></i> أسعار الشحن والمعاينة
         </button>
@@ -1492,7 +1632,7 @@
 
         authArea.innerHTML = `
           <div class="space-y-2">
-            <div class="text-xs font-bold text-slate-500 text-center">مرحباً، ${user.name}</div>
+            <div class="text-xs font-bold text-slate-500 text-center">مرحباً، ${escapeHtml(user.name)}</div>
             <button onclick="handleLogout()" class="w-full bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition text-sm">
               <i class="fa-solid fa-right-from-bracket"></i> تسجيل الخروج
             </button>
@@ -1529,7 +1669,7 @@
       appState.products.slice(0, 4).forEach(prod => {
         const isFav = appState.favorites.includes(prod.id);
         html += `
-          <div class="product-card ${productCardClasses(prod)} bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col relative group">
+          <div class="product-card ${productCardClasses(prod)} bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col relative group cursor-pointer" tabindex="0" role="link" aria-label="فتح المنتج: ${escapeHtml(prod.name)}" onclick="switchView('product-details', '${prod.id}')" onkeydown="if(event.target===this && (event.key==='Enter' || event.key===' ')){event.preventDefault();switchView('product-details', '${prod.id}')}">
             <div class="relative h-48 bg-slate-100 overflow-hidden">
               <img src="${escapeHtml(productMainImage(prod))}" class="product-photo w-full h-full" alt="${escapeHtml(prod.name)}" onerror="this.src='${PRODUCT_PLACEHOLDER}'">
               ${discountBadge(prod)}
@@ -1540,13 +1680,10 @@
             </div>
             <div class="p-5 flex-1 flex flex-col justify-between space-y-4">
               <div class="space-y-1">
-                <h4 class="font-black text-slate-900 text-lg line-clamp-1">${prod.name}</h4>
-                <p class="text-slate-500 text-xs line-clamp-2 leading-relaxed">${prod.desc}</p>
+                <h4 class="font-black text-slate-900 text-lg line-clamp-1">${escapeHtml(prod.name)}</h4>
+                <p class="text-slate-500 text-xs line-clamp-2 leading-relaxed">${escapeHtml(prod.desc || '')}</p>
                 ${productPriceHtml(prod)}
               </div>
-              <button onclick="switchView('product-details', '${prod.id}')" class="w-full bg-brand-50 hover:bg-brand-600 text-brand-700 hover:text-white font-bold py-2.5 rounded-xl transition text-sm flex items-center justify-center gap-2">
-                <i class="fa-solid fa-eye"></i> تفاصيل المنتج والعمولة
-              </button>
             </div>
           </div>
         `;
@@ -1638,7 +1775,7 @@
       const current = slides[appState.currentSlideIdx] || slides[0];
       if (!container || !dotsContainer || !current) return;
 
-      const imageUrl = current.image || 'https://placehold.co/1200x500/0f172a/ffffff?text=Clovs';
+      const imageUrl = safeImageUrl(current.image, 'https://placehold.co/1200x500/0f172a/ffffff?text=Clovs');
       const activeImage = container.querySelector('.slider-image.is-current');
       if (!activeImage || activeImage.dataset.slideImage !== imageUrl) {
         const token = ++sliderRenderToken;
@@ -1679,12 +1816,136 @@
 
     function productImages(prod) {
       const raw = Array.isArray(prod?.images) ? prod.images : (prod?.images && typeof prod.images === 'object' ? Object.values(prod.images) : []);
-      const images = raw.filter(image => typeof image === 'string' && image.trim());
-      if (!images.length && prod?.image) images.push(prod.image);
+      const images = raw.filter(image => typeof image === 'string' && image.trim()).map(image => safeImageUrl(image));
+      if (!images.length && prod?.image) images.push(safeImageUrl(prod.image));
       return images.length ? images : [PRODUCT_PLACEHOLDER];
     }
 
     function productMainImage(prod) { return productImages(prod)[0]; }
+
+    async function copyProductDescription(productId) {
+      const product = appState.products.find(item => item.id === productId);
+      if (!product) return;
+      const description = String(product.desc || '').trim();
+      if (!description) return showToast('المنتج ليس له وصف لنسخه', 'error');
+      try {
+        if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(description);
+        else {
+          const field = document.createElement('textarea');
+          field.value = description;
+          field.style.position = 'fixed';
+          field.style.opacity = '0';
+          document.body.appendChild(field);
+          field.select();
+          const copied = document.execCommand('copy');
+          field.remove();
+          if (!copied) throw new Error('Clipboard unavailable');
+        }
+        showToast('تم نسخ وصف المنتج');
+      } catch (error) {
+        console.error('[Clovs] copy description failed:', error);
+        showToast('تعذر نسخ الوصف من المتصفح', 'error');
+      }
+    }
+
+    function buildProductImagesZip(files) {
+      const encoder = new TextEncoder();
+      const localParts = [];
+      const directoryParts = [];
+      let offset = 0;
+      let directorySize = 0;
+      const crc32 = bytes => {
+        let crc = -1;
+        for (const byte of bytes) {
+          crc ^= byte;
+          for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (-(crc & 1) & 0xedb88320);
+        }
+        return (crc ^ -1) >>> 0;
+      };
+      files.forEach(({ name, bytes }) => {
+        const filename = encoder.encode(name);
+        const crc = crc32(bytes);
+        const local = new Uint8Array(30 + filename.length);
+        const lh = new DataView(local.buffer);
+        lh.setUint32(0, 0x04034b50, true);
+        lh.setUint16(4, 20, true);
+        lh.setUint16(6, 0x0800, true);
+        lh.setUint32(14, crc, true);
+        lh.setUint32(18, bytes.length, true);
+        lh.setUint32(22, bytes.length, true);
+        lh.setUint16(26, filename.length, true);
+        local.set(filename, 30);
+        localParts.push(local, bytes);
+        const central = new Uint8Array(46 + filename.length);
+        const ch = new DataView(central.buffer);
+        ch.setUint32(0, 0x02014b50, true);
+        ch.setUint16(4, 20, true);
+        ch.setUint16(6, 20, true);
+        ch.setUint16(8, 0x0800, true);
+        ch.setUint32(16, crc, true);
+        ch.setUint32(20, bytes.length, true);
+        ch.setUint32(24, bytes.length, true);
+        ch.setUint16(28, filename.length, true);
+        ch.setUint32(42, offset, true);
+        central.set(filename, 46);
+        directoryParts.push(central);
+        directorySize += central.length;
+        offset += local.length + bytes.length;
+      });
+      const end = new Uint8Array(22);
+      const eh = new DataView(end.buffer);
+      eh.setUint32(0, 0x06054b50, true);
+      eh.setUint16(8, files.length, true);
+      eh.setUint16(10, files.length, true);
+      eh.setUint32(12, directorySize, true);
+      eh.setUint32(16, offset, true);
+      return new Blob([...localParts, ...directoryParts, end], { type: 'application/zip' });
+    }
+
+    const mediaDownloadsInProgress = new Set();
+    async function downloadProductMedia(productId) {
+      const product = appState.products.find(item => item.id === productId);
+      if (!product || mediaDownloadsInProgress.has(productId)) return;
+      const images = productImages(product).filter(url => url !== PRODUCT_PLACEHOLDER);
+      if (!images.length) return showToast('لا توجد صور لهذا المنتج', 'error');
+      mediaDownloadsInProgress.add(productId);
+      try {
+        const results = await Promise.allSettled(images.map(async (url, index) => {
+          if (!/^https:\/\//i.test(url) && !/^data:image\//i.test(url)) throw new Error('Unsupported image URL');
+          const response = await fetch(url);
+          if (!response.ok) throw new Error('Image unavailable');
+          const blob = await response.blob();
+          if (!blob.type.startsWith('image/')) throw new Error('Not an image');
+          const ext = ({ jpeg:'jpg', png:'png', webp:'webp', gif:'gif', avif:'avif' })[blob.type.split('/')[1]] || 'jpg';
+          return { name: `image-${index + 1}.${ext}`, bytes: new Uint8Array(await blob.arrayBuffer()) };
+        }));
+        const downloaded = results.filter(result => result.status === 'fulfilled').map(result => result.value);
+        const unavailable = results.map((result, index) => result.status === 'rejected' ? images[index] : null).filter(Boolean);
+        if (downloaded.length) {
+          const fileUrl = URL.createObjectURL(buildProductImagesZip(downloaded));
+          const link = document.createElement('a');
+          link.href = fileUrl;
+          link.download = `clovs-product-${productId}-images.zip`;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          setTimeout(() => URL.revokeObjectURL(fileUrl), 60000);
+          showToast(`تم تجهيز ${downloaded.length} صورة للتحميل`);
+        }
+        if (unavailable.length) {
+          openModal('روابط الصور التي تعذر تحميلها تلقائياً', 'افتح كل صورة واحفظها من المتصفح.');
+          document.getElementById('modal-message').innerHTML = unavailable
+            .map((url, index) => /^https:\/\//i.test(url)
+              ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="block text-brand-700 underline py-2">فتح الصورة ${index + 1}</a>`
+              : '').join('');
+        }
+      } catch (error) {
+        console.error('[Clovs] media download failed:', error);
+        showToast('تعذر تجهيز صور المنتج للتحميل', 'error');
+      } finally {
+        mediaDownloadsInProgress.delete(productId);
+      }
+    }
 
     function bestSellerIds() {
       if (bestSellerCacheSource === appState.products) return bestSellerCache;
@@ -1762,8 +2023,8 @@
           const count = appState.products.filter(p => (p.category || 'عام') === cat).length;
           const isSelected = activeCat === cat;
           pillsHtml += `
-            <button onclick="setCategoryFilter('${cat}')" class="px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${isSelected ? 'bg-brand-600 text-white shadow-md shadow-brand-600/20' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}">
-              ${cat} (${count})
+            <button onclick="setCategoryFilter(${escapeHtml(JSON.stringify(cat))})" class="px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${isSelected ? 'bg-brand-600 text-white shadow-md shadow-brand-600/20' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}">
+              ${escapeHtml(cat)} (${count})
             </button>
           `;
         });
@@ -1794,7 +2055,7 @@
         const isFav = appState.favorites.includes(prod.id);
         const prodCat = prod.category || 'عام';
         html += `
-          <div class="product-card ${productCardClasses(prod)} bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col relative group">
+          <div class="product-card ${productCardClasses(prod)} bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col relative group cursor-pointer" tabindex="0" role="link" aria-label="فتح المنتج: ${escapeHtml(prod.name)}" onclick="switchView('product-details', '${prod.id}')" onkeydown="if(event.target===this && (event.key==='Enter' || event.key===' ')){event.preventDefault();switchView('product-details', '${prod.id}')}">
             <div class="relative h-52 bg-slate-100 overflow-hidden">
               <img src="${escapeHtml(productMainImage(prod))}" class="product-photo w-full h-full" alt="${escapeHtml(prod.name)}" onerror="this.src='${PRODUCT_PLACEHOLDER}'">
               ${discountBadge(prod)}
@@ -1806,16 +2067,13 @@
             <div class="p-6 flex-1 flex flex-col justify-between space-y-4">
               <div class="space-y-2">
                 <div class="flex items-center justify-between">
-                  <span class="text-[11px] font-black text-brand-700 bg-brand-50 px-2.5 py-1 rounded-lg">${prodCat}</span>
-                  <span class="text-[11px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg">المخزون: ${prod.stock ?? 10}</span>
+                  <span class="text-[11px] font-black text-brand-700 bg-brand-50 px-2.5 py-1 rounded-lg">${escapeHtml(prodCat)}</span>
+                  <span class="text-[11px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg">المخزون: ${escapeHtml(prod.stock ?? 10)}</span>
                 </div>
-                <h3 class="font-black text-slate-900 text-xl">${prod.name}</h3>
-                <p class="text-slate-500 text-xs line-clamp-2 leading-relaxed">${prod.desc}</p>
+                <h3 class="font-black text-slate-900 text-xl">${escapeHtml(prod.name)}</h3>
+                <p class="text-slate-500 text-xs line-clamp-2 leading-relaxed">${escapeHtml(prod.desc || '')}</p>
                 ${productPriceHtml(prod)}
               </div>
-              <button onclick="switchView('product-details', '${prod.id}')" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-2xl shadow-lg shadow-brand-600/20 transition text-sm flex items-center justify-center gap-2">
-                <i class="fa-solid fa-hand-holding-dollar"></i> تحديد العمولة والإضافة للسلة
-              </button>
             </div>
           </div>
         `;
@@ -1851,7 +2109,7 @@
       let html = '';
       favProducts.forEach(prod => {
         html += `
-          <div class="product-card ${productCardClasses(prod)} bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col relative group">
+          <div class="product-card ${productCardClasses(prod)} bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col relative group cursor-pointer" tabindex="0" role="link" aria-label="فتح المنتج: ${escapeHtml(prod.name)}" onclick="switchView('product-details', '${prod.id}')" onkeydown="if(event.target===this && (event.key==='Enter' || event.key===' ')){event.preventDefault();switchView('product-details', '${prod.id}')}">
             <div class="relative h-52 bg-slate-100 overflow-hidden">
               <img src="${escapeHtml(productMainImage(prod))}" class="product-photo w-full h-full" alt="${escapeHtml(prod.name)}" onerror="this.src='${PRODUCT_PLACEHOLDER}'">
               ${discountBadge(prod)}
@@ -1862,13 +2120,10 @@
             </div>
             <div class="p-6 flex-1 flex flex-col justify-between space-y-4">
               <div class="space-y-2">
-                <h3 class="font-black text-slate-900 text-xl">${prod.name}</h3>
-                <p class="text-slate-500 text-xs line-clamp-2 leading-relaxed">${prod.desc}</p>
+                <h3 class="font-black text-slate-900 text-xl">${escapeHtml(prod.name)}</h3>
+                <p class="text-slate-500 text-xs line-clamp-2 leading-relaxed">${escapeHtml(prod.desc || '')}</p>
                 ${productPriceHtml(prod)}
               </div>
-              <button onclick="switchView('product-details', '${prod.id}')" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-2xl shadow-lg shadow-brand-600/20 transition text-sm flex items-center justify-center gap-2">
-                <i class="fa-solid fa-hand-holding-dollar"></i> تحديد العمولة والإضافة للسلة
-              </button>
             </div>
           </div>
         `;
@@ -1913,6 +2168,9 @@
 
       const isFav = appState.favorites.includes(prod.id);
       const images = productImages(prod);
+      const relatedProducts = appState.products
+        .filter(item => item.id !== prod.id && (item.category || 'عام') === (prod.category || 'عام'))
+        .slice(0, 4);
       const imageIndex = Math.min(productGalleryIndexById[prod.id] || 0, images.length - 1);
       const variants = Array.isArray(prod.variants) ? prod.variants : [];
       const variantSelectors = variants.map((variant, index) => `<label class="block text-sm font-bold text-slate-700">
@@ -1940,8 +2198,12 @@
             <div class="space-y-6">
               <div>
                 <span class="bg-brand-50 text-brand-700 text-xs font-black px-3 py-1 rounded-full uppercase tracking-wider inline-block mb-3">منتج معتمد للدروبشيبينغ (معاينة مجانية)</span>
-                <h2 class="text-3xl font-black text-slate-900 mb-2">${prod.name}</h2>
-                <p class="text-slate-600 text-sm leading-relaxed">${prod.desc}</p>
+                <h2 class="text-3xl font-black text-slate-900 mb-2">${escapeHtml(prod.name)}</h2>
+                <p class="text-slate-600 text-sm leading-relaxed">${escapeHtml(prod.desc || '')}</p>
+                <div class="grid grid-cols-2 gap-2 mt-4">
+                  <button type="button" onclick="downloadProductMedia('${prod.id}')" class="min-h-11 flex items-center justify-center gap-2 px-2 py-2.5 rounded-xl bg-brand-50 hover:bg-brand-100 text-brand-700 text-xs sm:text-sm font-bold"><i class="fa-solid fa-download"></i> تحميل الصور</button>
+                  <button type="button" onclick="copyProductDescription('${prod.id}')" class="min-h-11 flex items-center justify-center gap-2 px-2 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs sm:text-sm font-bold"><i class="fa-regular fa-copy"></i> نسخ الوصف</button>
+                </div>
               </div>
 
               <div class="bg-slate-50 p-5 rounded-2xl border border-slate-200/80 space-y-3">
@@ -1951,7 +2213,7 @@
                 </div>
                 <div class="flex justify-between items-center text-sm">
                   <span class="font-bold text-slate-600">المخزون المتاح:</span>
-                  <span class="font-bold text-brand-600">${prod.stock ?? 10} قطعة</span>
+                  <span class="font-bold text-brand-600">${escapeHtml(prod.stock ?? 10)} قطعة</span>
                 </div>
               </div>
 
@@ -1981,6 +2243,24 @@
             </div>
           </div>
         </div>
+        ${relatedProducts.length ? `
+          <section class="mt-8" aria-label="منتجات من نفس الفئة">
+            <h3 class="text-xl sm:text-2xl font-black text-slate-900 mb-4">منتجات تانية من نفس الفئة</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              ${relatedProducts.map(item => `
+                <div class="product-card ${productCardClasses(item)} bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden cursor-pointer" tabindex="0" role="link" aria-label="فتح المنتج: ${escapeHtml(item.name)}" onclick="switchView('product-details', '${item.id}')" onkeydown="if(event.target===this && (event.key==='Enter' || event.key===' ')){event.preventDefault();switchView('product-details', '${item.id}')}">
+                  <div class="relative h-44 sm:h-48 bg-slate-100">
+                    <img src="${escapeHtml(productMainImage(item))}" alt="${escapeHtml(item.name)}" class="product-photo w-full h-full" onerror="this.src='${PRODUCT_PLACEHOLDER}'">
+                    ${discountBadge(item)}
+                    ${productHighlightBadge(item)}
+                  </div>
+                  <div class="p-4 space-y-2">
+                    <h4 class="font-black text-slate-900 line-clamp-2">${escapeHtml(item.name)}</h4>
+                    ${productPriceHtml(item)}
+                  </div>
+                </div>`).join('')}
+            </div>
+          </section>` : ''}
       `;
     }
 
@@ -1995,7 +2275,15 @@
       if (!prod) return;
 
       const commInput = document.getElementById('detail-commission-input');
-      const commission = commInput ? Math.max(0, parseFloat(commInput.value) || 0) : 50;
+      const commission = commInput ? Number(commInput.value) : 50;
+      if (!Number.isFinite(commission) || commission < 0 || commission > 100000) {
+        showToast('أدخل عمولة صحيحة لا تزيد عن 100000 ج.م', 'error');
+        return;
+      }
+      if (!Number.isInteger(Number(prod.stock ?? 10)) || Number(prod.stock ?? 10) <= 0) {
+        showToast('المنتج غير متاح حالياً', 'error');
+        return;
+      }
       const selectedVariants = {};
       (Array.isArray(prod.variants) ? prod.variants : []).forEach((variant, index) => {
         const value = document.querySelector(`[data-product-variant="${index}"]`)?.value || '';
@@ -2009,8 +2297,10 @@
       const existing = appState.activeCart.items.find(item => item.product.id === productId &&
         JSON.stringify(item.selectedVariants || {}) === JSON.stringify(selectedVariants) && item.commission === commission);
       if (existing) {
+        if (appState.activeCart.items.filter(item => item.product.id === productId).reduce((count, item) => count + item.quantity, 0) >= Number(prod.stock ?? 10)) return showToast('الكمية المطلوبة أكبر من المخزون المتاح', 'error');
         existing.quantity += 1;
       } else {
+        if (appState.activeCart.items.filter(item => item.product.id === productId).reduce((count, item) => count + item.quantity, 0) >= Number(prod.stock ?? 10)) return showToast('الكمية المطلوبة أكبر من المخزون المتاح', 'error');
         appState.activeCart.items.push({
           product: prod,
           quantity: 1,
@@ -2045,7 +2335,7 @@
       }
 
       const currentGov = appState.activeCart.customer.governorate || 'القاهرة';
-      const shippingRate = appState.shippingRates[currentGov] || 50;
+      const shippingRate = appState.shippingRates[currentGov] ?? 50;
 
       let subtotal = 0;
       let totalExpectedComm = 0;
@@ -2061,7 +2351,7 @@
             <div class="flex items-center gap-4">
               <img src="${escapeHtml(productMainImage(item.product))}" class="product-photo w-16 h-16 rounded-xl flex-shrink-0" onerror="this.src='${PRODUCT_PLACEHOLDER}'">
               <div>
-                <h4 class="font-bold text-slate-900 text-sm">${item.product.name}</h4>
+                <h4 class="font-bold text-slate-900 text-sm">${escapeHtml(item.product.name)}</h4>
                 ${Object.entries(item.selectedVariants || {}).length ? `<div class="text-xs text-brand-700 font-bold mt-1">${Object.entries(item.selectedVariants).map(([key, value]) => `${escapeHtml(key)}: ${escapeHtml(value)}`).join(' • ')}</div>` : ''}
                 <div class="text-xs text-slate-500 mt-0.5">سعر المنتج: ${money(getProductPrice(item.product))} ج.م | عمولتك: <span class="font-bold text-brand-600">${item.commission} ج.م</span></div>
                 <div class="text-xs font-bold text-slate-700 mt-1">سعر البيع للعميل: ${money(getProductPrice(item.product) + item.commission)} ج.م</div>
@@ -2081,12 +2371,14 @@
         `;
       });
 
-      const grandTotal = subtotal + shippingRate;
+      subtotal = Math.round(subtotal * 100) / 100;
+      totalExpectedComm = Math.round(totalExpectedComm * 100) / 100;
+      const grandTotal = Math.round((subtotal + shippingRate) * 100) / 100;
 
       let govOptions = '';
       GOVERNORATES.forEach(gov => {
         const sel = gov === currentGov ? 'selected' : '';
-        govOptions += `<option value="${gov}" ${sel}>${gov} (شحن: ${appState.shippingRates[gov] || 50} ج.م)</option>`;
+        govOptions += `<option value="${gov}" ${sel}>${gov} (شحن: ${appState.shippingRates[gov] ?? 50} ج.م)</option>`;
       });
 
       container.innerHTML = `
@@ -2104,11 +2396,11 @@
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label class="block text-xs font-bold text-slate-700 mb-1.5">اسم العميل الثلاثي</label>
-                <input type="text" id="cust-name" value="${appState.activeCart.customer.name}" oninput="appState.activeCart.customer.name=this.value" placeholder="مثال: أحمد محمد علي" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-brand-500">
+                <input type="text" id="cust-name" value="${escapeHtml(appState.activeCart.customer.name)}" oninput="appState.activeCart.customer.name=this.value" placeholder="مثال: أحمد محمد علي" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-brand-500">
               </div>
               <div>
                 <label class="block text-xs font-bold text-slate-700 mb-1.5">رقم هاتف العميل</label>
-                <input type="tel" id="cust-phone" value="${appState.activeCart.customer.phone}" oninput="appState.activeCart.customer.phone=this.value" placeholder="010XXXXXXXX" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-brand-500">
+                <input type="tel" id="cust-phone" value="${escapeHtml(appState.activeCart.customer.phone)}" oninput="appState.activeCart.customer.phone=this.value" placeholder="010XXXXXXXX" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-brand-500">
               </div>
               <div>
                 <label class="block text-xs font-bold text-slate-700 mb-1.5">المحافظة (لتحديد الشحن)</label>
@@ -2118,7 +2410,7 @@
               </div>
               <div>
                 <label class="block text-xs font-bold text-slate-700 mb-1.5">العنوان بالتفصيل</label>
-                <input type="text" id="cust-address" value="${appState.activeCart.customer.address}" oninput="appState.activeCart.customer.address=this.value" placeholder="الشارع، رقم العمارة، الشقة، علامة مميزة" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-brand-500">
+                <input type="text" id="cust-address" value="${escapeHtml(appState.activeCart.customer.address)}" oninput="appState.activeCart.customer.address=this.value" placeholder="الشارع، رقم العمارة، الشقة، علامة مميزة" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-brand-500">
               </div>
             </div>
           </div>
@@ -2140,16 +2432,16 @@
                 <input type="radio" name="pay-method" value="online" ${appState.activeCart.paymentMethod === 'online' ? 'checked' : ''} onchange="setPaymentMethod('online')" class="text-brand-600">
                 <div class="text-sm">
                   <div class="font-bold text-slate-900">دفع إلكتروني مسبق (محفظة فودافون)</div>
-                  <div class="text-xs text-slate-500">تحويل لمستلم المنصة رقم: 01020327694</div>
+                  <div class="text-xs text-slate-500">تحويل لمستلم المنصة رقم: ${escapeHtml(appState.contactInfo.paymentPhone || appState.contactInfo.whatsapp)}</div>
                 </div>
               </label>
             </div>
 
             <div id="online-payment-box" class="${appState.activeCart.paymentMethod === 'online' ? '' : 'hidden'} p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
-              <p class="text-xs font-bold text-brand-700">حول المبلغ الإجمالي (${grandTotal} ج.م) لرقم المحفظة: 01020327694</p>
+              <p class="text-xs font-bold text-brand-700">حول المبلغ الإجمالي (${grandTotal} ج.م) لرقم المحفظة: ${escapeHtml(appState.contactInfo.paymentPhone || appState.contactInfo.whatsapp)}</p>
               <div>
                 <label class="block text-xs font-bold text-slate-700 mb-1">رقم الهاتف المحول منه:</label>
-                <input type="tel" id="pay-sender-phone" value="${appState.activeCart.paymentProof.senderPhone}" oninput="appState.activeCart.paymentProof.senderPhone=this.value" placeholder="010XXXXXXXX" class="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs">
+                <input type="tel" id="pay-sender-phone" value="${escapeHtml(appState.activeCart.paymentProof.senderPhone)}" oninput="appState.activeCart.paymentProof.senderPhone=this.value" placeholder="010XXXXXXXX" class="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs">
               </div>
               <div>
                 <label class="block text-xs font-bold text-slate-700 mb-1">صورة إيصال التحويل (سكرين شوت):</label>
@@ -2191,6 +2483,7 @@
     function changeCartItemQty(index, delta) {
       const item = appState.activeCart.items[index];
       if (!item) return;
+      if (delta > 0 && appState.activeCart.items.filter(entry => entry.product.id === item.product.id).reduce((count, entry) => count + entry.quantity, 0) >= Number(item.product.stock ?? 10)) return showToast('الكمية المطلوبة أكبر من المخزون المتاح', 'error');
       item.quantity += delta;
       if (item.quantity <= 0) {
         appState.activeCart.items.splice(index, 1);
@@ -2217,13 +2510,20 @@
     }
 
     function setPaymentMethod(method) {
+      if (!['cod', 'online'].includes(method)) return;
       appState.activeCart.paymentMethod = method;
+      if (method === 'cod') appState.activeCart.paymentProof = { screenshot: '', senderPhone: '' };
       renderCartView();
     }
 
     function handlePaymentProofUpload(e) {
       const file = e.target.files[0];
       if (!file) return;
+      if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 3 * 1024 * 1024) {
+        e.target.value = '';
+        showToast('ارفع إيصال PNG أو JPG أو WebP بحجم أقل من 3 ميجابايت', 'error');
+        return;
+      }
       const reader = new FileReader();
       reader.onload = function(evt) {
         appState.activeCart.paymentProof.screenshot = evt.target.result;
@@ -2233,6 +2533,7 @@
     }
 
     let orderSubmissionInProgress = false;
+    let pendingCheckoutKey = null;
     async function submitOrderCheckout() {
       if (!appState.currentUser?.firebaseMarketer || !firebaseAuth.currentUser) {
         showToast('يجب تسجيل الدخول كمسوق لإتمام الطلب', 'error');
@@ -2243,9 +2544,27 @@
         showToast('أضف منتجاً إلى السلة أولاً', 'error');
         return;
       }
+      const requestedQuantities = new Map();
+      for (const item of appState.activeCart.items) {
+        const current = appState.products.find(product => product.id === item.product.id);
+        const requested = (requestedQuantities.get(item.product.id) || 0) + item.quantity;
+        requestedQuantities.set(item.product.id, requested);
+        if (!current || !Number.isInteger(item.quantity) || item.quantity < 1 ||
+            !Number.isFinite(Number(current.stock ?? 10)) || requested > Number(current.stock ?? 10) ||
+            !Number.isFinite(item.commission) || item.commission < 0) {
+          showToast('منتج غير متاح أو كميته تغيرت. راجع السلة قبل إرسال الطلب.', 'error');
+          return;
+        }
+        item.product = current;
+      }
       const c = appState.activeCart.customer;
       if (!c.name.trim() || !c.phone.trim() || !c.address.trim()) {
         showToast('يرجى كتابة كافة بيانات العميل (الاسم، الهاتف، العنوان)', 'error');
+        return;
+      }
+      if (!/^01[0-9]{9}$/.test(c.phone.trim()) || c.name.length > 100 || c.address.length > 300 ||
+          !GOVERNORATES.includes(c.governorate) || !['cod', 'online'].includes(appState.activeCart.paymentMethod)) {
+        showToast('راجع رقم العميل والمحافظة وبيانات الطلب', 'error');
         return;
       }
 
@@ -2255,7 +2574,7 @@
       }
 
       const gov = c.governorate || 'القاهرة';
-      const shippingRate = appState.shippingRates[gov] || 50;
+      const shippingRate = appState.shippingRates[gov] ?? 50;
 
       let subtotal = 0;
       let totalCommission = 0;
@@ -2263,10 +2582,17 @@
         subtotal += (getProductPrice(i.product) + i.commission) * i.quantity;
         totalCommission += i.commission * i.quantity;
       });
+      if (!Number.isFinite(subtotal) || !Number.isFinite(totalCommission) || subtotal <= 0 || totalCommission < 0) {
+        showToast('تعذر حساب إجمالي الطلب. راجع أسعار المنتجات', 'error');
+        return;
+      }
 
-      const orderRef = ordersRef.push();
+      subtotal = Math.round(subtotal * 100) / 100;
+      totalCommission = Math.round(totalCommission * 100) / 100;
+      const orderKey = pendingCheckoutKey || ordersRef.push().key;
+      pendingCheckoutKey = orderKey;
       const newOrder = {
-        id: 'ORD-' + Math.floor(100000 + Math.random() * 900000),
+        id: 'ORD-' + orderKey,
         marketerUid: firebaseAuth.currentUser.uid,
         marketerId: appState.currentUser.id,
         marketerName: appState.currentUser.name,
@@ -2287,7 +2613,7 @@
         shippingRate: shippingRate,
         subtotal: subtotal,
         totalCommission: totalCommission,
-        grandTotal: subtotal + shippingRate,
+        grandTotal: Math.round((subtotal + shippingRate) * 100) / 100,
         paymentMethod: appState.activeCart.paymentMethod,
         paymentProof: { ...appState.activeCart.paymentProof },
         commissionCredited: false,
@@ -2298,16 +2624,22 @@
       orderSubmissionInProgress = true;
       if (button) button.disabled = true;
       try {
-        await orderRef.set(newOrder);
+        const result = await secureCall('secureCreateOrder', {
+          orderKey,
+          items: newOrder.items.map(item => ({ productId:item.product.id, quantity:item.quantity, commission:item.commission, selectedVariants:item.selectedVariants })),
+          customer:newOrder.customer, paymentMethod:newOrder.paymentMethod, paymentProof:newOrder.paymentProof
+        });
+        newOrder.totalCommission = result.data.totalCommission;
       } catch (error) {
         console.error('[Clovs Firebase] order save failed:', error);
-        showToast('تعذر إرسال الأوردر. راجع قواعد orders في Firebase وحاول مجدداً.', 'error');
+        showToast('تعذر إرسال الأوردر. راجع البيانات أو اتصل بالإدارة ثم حاول مجدداً.', 'error');
         return;
       } finally {
         orderSubmissionInProgress = false;
         if (button) button.disabled = false;
       }
 
+      pendingCheckoutKey = null;
       // Reset active cart
       appState.activeCart.items = [];
       appState.activeCart.customer = { name: '', phone: '', address: '', governorate: 'القاهرة' };
@@ -2342,20 +2674,8 @@
       const identity = document.getElementById('login-username').value.trim();
       const password = document.getElementById('login-password').value;
 
-      // Existing in-memory accounts can still sign in by their old username during this session.
       if (!identity.includes('@')) {
-        const legacyUser = appState.usersList.find(user =>
-          !user.firebaseMarketer && user.role === 'marketer' &&
-          user.username?.toLowerCase() === identity.toLowerCase() && user.password === password
-        );
-        if (!legacyUser || legacyUser.status !== 'approved') {
-          showToast('بيانات الدخول غير صحيحة. الحسابات الجديدة تدخل بالبريد الإلكتروني.', 'error');
-          return;
-        }
-        appState.currentUser = legacyUser;
-        updateHeaderAuthUI();
-        showToast(`مرحباً بك مجدداً يا ${legacyUser.name}!`);
-        switchView('home');
+        showToast('سجّل الدخول بالبريد الإلكتروني المرتبط بحساب Firebase.', 'error');
         return;
       }
 
@@ -2429,6 +2749,7 @@
         throw new Error('unauthorized-staff');
       }
       if (role === 'super_admin') startStaffRolesSync();
+      else watchCurrentStaffRole(authUser);
       if (role === 'super_admin' || role === 'admin') startMarketerProfilesSync();
       showToast('تم تسجيل دخول فريق الموقع عبر Firebase');
       switchView(role === 'super_admin' ? 'super-customizer' : role === 'admin' ? 'admin-dashboard' : 'product-manager');
@@ -2443,7 +2764,7 @@
       const password = document.getElementById('reg-password').value;
       const role = document.getElementById('reg-role').value;
       const usernameKey = username.toLowerCase();
-      if (role !== 'marketer' || !name || !email || !/^[a-z0-9_]{3,24}$/.test(usernameKey)) {
+      if (role !== 'marketer' || !name || name.length > 100 || !/^01[0-9]{9}$/.test(phone) || !email || !/^[a-z0-9_]{3,24}$/.test(usernameKey)) {
         showToast('أدخل بيانات صحيحة واسم مستخدم من 3 إلى 24 حرفاً إنجليزياً أو رقماً.', 'error');
         return;
       }
@@ -2452,8 +2773,7 @@
         document.getElementById('reg-password').focus();
         return;
       }
-      if (appState.usersList.some(user => user.username?.toLowerCase() === usernameKey || user.email?.toLowerCase() === email) ||
-          appState.registrationRequests.some(request => request.username?.toLowerCase() === usernameKey || request.email?.toLowerCase() === email)) {
+      if (appState.usersList.some(user => user.username?.toLowerCase() === usernameKey || user.email?.toLowerCase() === email)) {
         showToast('البريد الإلكتروني أو اسم المستخدم مستخدم مسبقاً.', 'error');
         return;
       }
@@ -2556,11 +2876,9 @@
       const myOrders = appState.orders.filter(o => o.marketerId === user.id);
       
       let totalSalesExpected = 0;
-      let deliveredComm = 0;
 
       myOrders.forEach(o => {
-        totalSalesExpected += o.totalCommission;
-        if (o.status === 'delivered') deliveredComm += o.totalCommission;
+        if (!['cancelled', 'returned'].includes(o.status)) totalSalesExpected += Number(o.totalCommission) || 0;
       });
 
       let ordersRows = '';
@@ -2578,10 +2896,10 @@
 
           ordersRows += `
             <tr class="border-b border-slate-100 text-sm">
-              <td class="py-3 px-4 font-bold text-slate-900">${o.id}</td>
-              <td class="py-3 px-4">${o.customer.name} (${o.customer.governorate})</td>
+              <td class="py-3 px-4 font-bold text-slate-900">${escapeHtml(o.id)}</td>
+              <td class="py-3 px-4">${escapeHtml(o.customer?.name || '')} (${escapeHtml(o.customer?.governorate || '')})</td>
               <td class="py-3 px-4 font-black text-brand-600">${o.totalCommission} ج.م</td>
-              <td class="py-3 px-4 font-bold text-slate-800">${o.grandTotal} ج.م</td>
+              <td class="py-3 px-4 font-bold text-slate-800">${escapeHtml(o.grandTotal)} ج.م</td>
               <td class="py-3 px-4">${statusBadge}</td>
             </tr>
           `;
@@ -2592,7 +2910,7 @@
         <div class="bg-white p-6 rounded-3xl border border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4">
           <div>
             <h2 class="text-2xl font-black text-slate-900">لوحة تحكم المسوق</h2>
-            <p class="text-slate-500 text-sm">مرحباً بك يا ${user.name}، تابع هنا أرباحك وعمولات أوردراتك.</p>
+            <p class="text-slate-500 text-sm">مرحباً بك يا ${escapeHtml(user.name)}، تابع هنا أرباحك وعمولات أوردراتك.</p>
           </div>
           <button onclick="switchView('marketer-withdraw')" class="bg-brand-600 hover:bg-brand-700 text-white font-bold px-6 py-3 rounded-2xl shadow-lg shadow-brand-600/20 text-sm flex items-center gap-2">
             <i class="fa-solid fa-money-bill-transfer"></i> صفحة سحب الأرباح
@@ -2606,14 +2924,14 @@
             <div class="text-xs text-slate-400 mt-2">من الأوردرات التي تم تسليمها بنجاح</div>
           </div>
           <div class="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
-            <div class="text-xs font-bold text-slate-500 mb-1">إجمالي الأرباح المتوقعة لكل الأوردرات</div>
+            <div class="text-xs font-bold text-slate-500 mb-1">إجمالي عمولات الأوردرات غير الملغاة</div>
             <div class="text-3xl font-black text-brand-600">${totalSalesExpected} ج.م</div>
-            <div class="text-xs text-slate-400 mt-2">تشمل الأوردرات التي قيد الشحن والمراجعة</div>
+            <div class="text-xs text-slate-400 mt-2">تشمل الأوردرات المسلّمة وقيد المراجعة والشحن</div>
           </div>
           <div class="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
             <div class="text-xs font-bold text-slate-500 mb-1">عدد الأوردرات المسجلة</div>
             <div class="text-3xl font-black text-slate-900">${myOrders.length}</div>
-            <div class="text-xs text-slate-400 mt-2">أوردر عميل نشط ومكتمل</div>
+            <div class="text-xs text-slate-400 mt-2">تشمل جميع حالات الطلبات</div>
           </div>
         </div>
 
@@ -2652,9 +2970,9 @@
           const badge = w.status === 'paid' ? '<span class="px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-600">تم الصرف</span>' : '<span class="px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-600">قيد المراجعة (الاثنين/الجمعة)</span>';
           rows += `
             <tr class="border-b border-slate-100 text-xs">
-              <td class="py-3 px-4 font-bold text-slate-900">${w.id}</td>
+              <td class="py-3 px-4 font-bold text-slate-900">${escapeHtml(w.id)}</td>
               <td class="py-3 px-4 font-black text-brand-600">${w.amount} ج.م</td>
-              <td class="py-3 px-4">${w.method} - ${w.details}</td>
+              <td class="py-3 px-4">${escapeHtml(w.method)} - ${escapeHtml(w.details)}</td>
               <td class="py-3 px-4">${badge}</td>
             </tr>
           `;
@@ -2696,7 +3014,7 @@
 
               <div>
                 <label class="block text-xs font-bold text-slate-700 mb-1.5">بيانات وسيلة السحب (رقم المحفظة / عنوان إنستاباي)</label>
-                <input type="text" id="withdraw-details-input" value="${user.payoutDetails || ''}" placeholder="أدخل رقمك أو عنوان المحفظة..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-500">
+                <input type="text" id="withdraw-details-input" value="${escapeHtml(user.payoutDetails || '')}" placeholder="أدخل رقمك أو عنوان المحفظة..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-500">
               </div>
 
               <button onclick="submitWithdrawRequest()" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-brand-600/20 transition text-sm flex items-center justify-center gap-2">
@@ -2726,6 +3044,8 @@
     }
 
     let withdrawSubmissionInProgress = false;
+    let pendingWithdrawalKey = null;
+    let pendingWithdrawalPayload = null;
     async function submitWithdrawRequest() {
       const user = appState.currentUser;
       if (!user?.firebaseMarketer || !firebaseAuth.currentUser || withdrawSubmissionInProgress) return;
@@ -2735,52 +3055,43 @@
       const method = document.getElementById('withdraw-method-select').value;
       const details = document.getElementById('withdraw-details-input').value.trim();
 
-      if (isNaN(amount) || amount < 50) {
+      if (!Number.isFinite(amount) || amount < 50 || Math.abs(amount * 100 - Math.round(amount * 100)) > 1e-6) {
         showToast('الحد الأدنى لطلب السحب هو 50 ج.م', 'error');
         return;
       }
 
-      if (amount > (user.balance || 0)) {
+      if (!pendingWithdrawalKey && amount > (user.balance || 0)) {
         showToast('رصيدك المتاح للسحب غير كافٍ', 'error');
         return;
       }
 
-      if (!details) {
+      if (!details || details.length > 160 || !['محفظة إلكترونية', 'إنستاباي (InstaPay)', 'تحويل بنكي'].includes(method)) {
         showToast('يرجى إدخال بيانات وسيلة التحويل', 'error');
         return;
       }
 
-      const requestRef = withdrawRequestsRef.push();
-      const req = {
-        id: 'WTH-' + Math.floor(1000 + Math.random() * 9000),
-        userId: user.id,
-        marketerUid: firebaseAuth.currentUser.uid,
-        userName: user.name,
-        amount: amount,
-        method: method,
-        details: details,
-        date: new Date().toLocaleDateString('ar-EG'),
-        createdAt: firebase.database.ServerValue.TIMESTAMP,
-        status: 'pending'
-      };
-
+      const requestKey = pendingWithdrawalKey || withdrawRequestsRef.push().key;
+      pendingWithdrawalKey = requestKey;
+      pendingWithdrawalPayload = pendingWithdrawalPayload || { requestKey, amount, method, details };
       withdrawSubmissionInProgress = true;
       const button = document.querySelector('button[onclick="submitWithdrawRequest()"]');
       if (button) button.disabled = true;
       try {
-        await firebaseDB.ref().update({
-          [`marketerProfiles/${user.uid}/balance`]: firebase.database.ServerValue.increment(-amount),
-          [`marketerProfiles/${user.uid}/payoutDetails`]: details,
-          [`withdrawRequests/${requestRef.key}`]: req
-        });
+        await secureCall('secureRequestWithdrawal', pendingWithdrawalPayload);
       } catch (error) {
         console.error('[Clovs Firebase] withdrawal request failed:', error);
-        showToast('تعذر إرسال طلب السحب. تحقق من رصيدك وقواعد Firebase.', 'error');
+        if (['functions/failed-precondition', 'functions/invalid-argument', 'functions/permission-denied'].includes(error.code)) {
+          pendingWithdrawalKey = null;
+          pendingWithdrawalPayload = null;
+        }
+        showToast('تعذر إرسال طلب السحب. تحقق من الرصيد والبيانات ثم حاول مجدداً.', 'error');
         return;
       } finally {
         withdrawSubmissionInProgress = false;
         if (button) button.disabled = false;
       }
+      pendingWithdrawalKey = null;
+      pendingWithdrawalPayload = null;
       openModal('تم تقديم طلب السحب بنجاح', `تم استلام طلب سحب مبلغ ${amount} ج.م وسيتم تنفيذه في موعد التحويلات القادم (الاثنين أو الجمعة).`);
     }
 
@@ -2798,13 +3109,13 @@
             <tr class="border-b border-slate-100 text-sm">
               <td class="py-3 px-4 flex items-center gap-3">
                 <img src="${escapeHtml(productMainImage(p))}" class="product-photo w-10 h-10 rounded-lg" onerror="this.src='${PRODUCT_PLACEHOLDER}'">
-                <span class="font-bold text-slate-900">${p.name}</span>
+                <span class="font-bold text-slate-900">${escapeHtml(p.name)}</span>
               </td>
-              <td class="py-3 px-4 font-bold text-brand-700 text-xs"><span class="bg-brand-50 px-2 py-1 rounded-md">${p.category || 'عام'}</span></td>
+              <td class="py-3 px-4 font-bold text-brand-700 text-xs"><span class="bg-brand-50 px-2 py-1 rounded-md">${escapeHtml(p.category || 'عام')}</span></td>
               <td class="py-3 px-4 font-black text-brand-600">${money(getProductPrice(p))} ج.م ${discountRate(p) ? `<span class="text-rose-600 text-xs">(${discountRate(p)}٪ خصم)</span>` : ''}</td>
-              <td class="py-3 px-4 font-bold text-slate-700">${p.stock ?? 10} قطعة</td>
+              <td class="py-3 px-4 font-bold text-slate-700">${escapeHtml(p.stock ?? 10)} قطعة</td>
               <td class="py-3 px-4 font-bold text-amber-700">${Number(p.soldCount) || 0}</td>
-              <td class="py-3 px-4 text-xs text-slate-500 max-w-xs truncate">${p.desc}</td>
+              <td class="py-3 px-4 text-xs text-slate-500 max-w-xs truncate">${escapeHtml(p.desc || '')}</td>
               <td class="py-3 px-4 flex gap-2">
                 <button onclick="editProductModal('${p.id}')" class="text-brand-600 hover:text-brand-800 p-2 font-bold text-xs"><i class="fa-solid fa-pen-to-square"></i> تعديل</button>
                 <button onclick="deleteProduct('${p.id}')" class="text-rose-500 hover:text-rose-700 p-2 font-bold text-xs"><i class="fa-solid fa-trash"></i> حذف</button>
@@ -2818,7 +3129,7 @@
       (appState.categories || []).forEach((cat, index) => {
         catChips += `
           <div class="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-800">
-            <span>${cat}</span>
+            <span>${escapeHtml(cat)}</span>
             <button onclick="deleteCategory(${index})" class="text-rose-500 hover:text-rose-700" title="حذف التصنيف">
               <i class="fa-solid fa-xmark"></i>
             </button>
@@ -2909,6 +3220,7 @@
 
     async function deleteCategory(index) {
       if (!appState.categories || !appState.categories[index]) return;
+      if (appState.categories.length <= 1) return showToast('اترك تصنيفاً واحداً على الأقل للمنتجات', 'error');
       const catName = appState.categories[index];
       try {
         await categoriesRef.transaction(current =>
@@ -3145,7 +3457,7 @@
       if (productImagesLoading) return showToast('انتظر حتى ينتهي تجهيز الصور.', 'error');
       if (pendingUrl) return showToast('اضغط «إضافة الرابط» لإضافته إلى صور المنتج قبل الحفظ.', 'error');
       const images = tempProductImages.length ? [...tempProductImages] : [PRODUCT_PLACEHOLDER];
-      if (images.reduce((size, image) => size + image.length, images[0].length) > 12000000) {
+      if (images.reduce((size, image) => size + image.length, 0) > 12000000) {
         showToast('حجم صور المنتج كبير. احذف بعض الصور أو ارفع نسخًا أصغر.', 'error');
         return;
       }
@@ -3222,19 +3534,19 @@
         appState.orders.forEach(o => {
           let proofBtn = '';
           if (o.paymentMethod === 'online' && o.paymentProof && o.paymentProof.screenshot) {
-            proofBtn = `<button onclick="viewPaymentProofModal('${o.id}')" class="text-xs font-bold text-brand-600 bg-brand-50 px-2 py-1 rounded-lg">عرض الإيصال</button>`;
+            proofBtn = `<button onclick="viewPaymentProofModal('${o.firebaseKey}')" class="text-xs font-bold text-brand-600 bg-brand-50 px-2 py-1 rounded-lg">عرض الإيصال</button>`;
           }
 
           ordersHtml += `
             <tr class="border-b border-slate-100 text-xs">
-              <td class="py-3 px-3 font-bold text-slate-900">${o.id}<br><button onclick="viewOrderItemsModal('${o.id}')" class="text-xs text-brand-700 underline mt-1">المنتجات والاختيارات</button></td>
-              <td class="py-3 px-3 font-bold text-brand-700">${o.marketerName}</td>
-              <td class="py-3 px-3">${o.customer.name}<br><span class="text-slate-400">${o.customer.phone} - ${o.customer.governorate}</span></td>
-              <td class="py-3 px-3 font-black">${o.grandTotal} ج.م</td>
+              <td class="py-3 px-3 font-bold text-slate-900">${escapeHtml(o.id)}<br><button onclick="viewOrderItemsModal('${o.firebaseKey}')" class="text-xs text-brand-700 underline mt-1">المنتجات والاختيارات</button></td>
+              <td class="py-3 px-3 font-bold text-brand-700">${escapeHtml(o.marketerName)}</td>
+              <td class="py-3 px-3">${escapeHtml(o.customer?.name || '')}<br><span class="text-slate-400">${escapeHtml(o.customer?.phone || '')} - ${escapeHtml(o.customer?.governorate || '')}</span></td>
+              <td class="py-3 px-3 font-black">${escapeHtml(o.grandTotal)} ج.م</td>
               <td class="py-3 px-3 font-bold text-emerald-600">${o.totalCommission} ج.م</td>
-              <td class="py-3 px-3">${proofBtn || o.paymentMethod}</td>
+              <td class="py-3 px-3">${proofBtn || escapeHtml(o.paymentMethod)}</td>
               <td class="py-3 px-3">
-                <select onchange="updateOrderStatus('${o.id}', this.value)" class="bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold">
+                <select onchange="updateOrderStatus('${o.firebaseKey}', this.value)" class="bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold">
                   <option value="pending" ${o.status === 'pending' ? 'selected' : ''}>قيد المراجعة</option>
                   <option value="confirmed" ${o.status === 'confirmed' ? 'selected' : ''}>تم التأكيد</option>
                   <option value="shipping" ${o.status === 'shipping' ? 'selected' : ''}>في الشحن</option>
@@ -3253,32 +3565,14 @@
         wRows = `<tr><td colspan="5" class="text-center py-4 text-slate-400 text-xs">لا توجد طلبات سحب.</td></tr>`;
       } else {
         appState.withdrawRequests.forEach(w => {
-          const actionBtn = w.status === 'pending' ? `<button onclick="approveWithdrawRequest('${w.id}')" class="bg-emerald-600 text-white font-bold px-3 py-1 rounded-lg text-xs">تأكيد الصرف</button>` : '<span class="text-emerald-600 font-bold text-xs">تم التحويل</span>';
+          const actionBtn = w.status === 'pending' ? `<button onclick="approveWithdrawRequest('${w.firebaseKey}')" class="bg-emerald-600 text-white font-bold px-3 py-1 rounded-lg text-xs">تأكيد الصرف</button>` : '<span class="text-emerald-600 font-bold text-xs">تم التحويل</span>';
           wRows += `
             <tr class="border-b border-slate-100 text-xs">
-              <td class="py-2.5 px-3 font-bold">${w.userName}</td>
+              <td class="py-2.5 px-3 font-bold">${escapeHtml(w.userName)}</td>
               <td class="py-2.5 px-3 font-black text-brand-600">${w.amount} ج.م</td>
-              <td class="py-2.5 px-3">${w.method}</td>
-              <td class="py-2.5 px-3 text-slate-500">${w.details}</td>
+              <td class="py-2.5 px-3">${escapeHtml(w.method)}</td>
+              <td class="py-2.5 px-3 text-slate-500">${escapeHtml(w.details)}</td>
               <td class="py-2.5 px-3">${actionBtn}</td>
-            </tr>
-          `;
-        });
-      }
-
-      let regRows = '';
-      if (appState.registrationRequests.length === 0) {
-        regRows = `<tr><td colspan="4" class="text-center py-4 text-slate-400 text-xs">لا توجد طلبات تسجيل معلقة.</td></tr>`;
-      } else {
-        appState.registrationRequests.forEach(r => {
-          regRows += `
-            <tr class="border-b border-slate-100 text-xs">
-              <td class="py-2 px-3 font-bold">${r.name} (${r.username})</td>
-              <td class="py-2 px-3 font-bold text-brand-600">${r.role === 'admin' ? 'مدير' : 'مضيف منتجات'}</td>
-              <td class="py-2 px-3 flex gap-2">
-                <button onclick="approveRegistration('${r.id}')" class="bg-emerald-600 text-white px-3 py-1 rounded-lg font-bold text-xs">موافقة</button>
-                <button onclick="rejectRegistration('${r.id}')" class="bg-rose-600 text-white px-3 py-1 rounded-lg font-bold text-xs">رفض</button>
-              </td>
             </tr>
           `;
         });
@@ -3317,7 +3611,7 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="grid grid-cols-1 gap-6">
           <div class="bg-white p-6 rounded-3xl border border-slate-100 space-y-4">
             <h3 class="font-black text-slate-900 text-lg">طلبات سحب الأرباح للمسوقين</h3>
             <div class="overflow-x-auto">
@@ -3336,34 +3630,26 @@
             </div>
           </div>
 
-          <div class="bg-white p-6 rounded-3xl border border-slate-100 space-y-4">
-            <h3 class="font-black text-slate-900 text-lg">طلبات تسجيل المديرين ومضيفي المنتجات</h3>
-            <div class="overflow-x-auto">
-              <table class="w-full text-right">
-                <thead>
-                  <tr class="bg-slate-50 text-[11px] font-black text-slate-600 border-b border-slate-200">
-                    <th class="py-2 px-3">المتقدم</th>
-                    <th class="py-2 px-3">الدور المطلوب</th>
-                    <th class="py-2 px-3">القرار</th>
-                  </tr>
-                </thead>
-                <tbody>${regRows}</tbody>
-              </table>
-            </div>
-          </div>
         </div>
       `;
     }
 
     function viewPaymentProofModal(orderId) {
-      const o = appState.orders.find(x => x.id === orderId);
+      const o = appState.orders.find(x => x.firebaseKey === orderId);
       if (!o || !o.paymentProof.screenshot) return;
-
-      openModal('إيصال التحويل الإلكتروني', `رقم الهاتف المحول منه: ${o.paymentProof.senderPhone || 'غير مسجل'}<br><div class="mt-3 max-h-80 overflow-y-auto rounded-xl"><img src="${o.paymentProof.screenshot}" class="w-full rounded-xl"></div>`);
+      openModal('إيصال التحويل الإلكتروني', '');
+      const content = document.getElementById('modal-message');
+      const phone = document.createElement('p');
+      phone.textContent = `رقم الهاتف المحول منه: ${o.paymentProof.senderPhone || 'غير مسجل'}`;
+      const image = document.createElement('img');
+      image.src = safeImageUrl(o.paymentProof.screenshot);
+      image.alt = 'إيصال التحويل';
+      image.className = 'w-full max-h-80 object-contain rounded-xl mt-3';
+      content.replaceChildren(phone, image);
     }
 
     function viewOrderItemsModal(orderId) {
-      const order = appState.orders.find(item => item.id === orderId);
+      const order = appState.orders.find(item => item.firebaseKey === orderId);
       if (!order) return;
       openModal(`منتجات الأوردر ${order.id}`, '');
       document.getElementById('modal-message').innerHTML = (order.items || []).map(item => `
@@ -3373,44 +3659,27 @@
         </div>`).join('') || 'لا توجد منتجات في الأوردر.';
     }
 
+    const pendingOrderStatusUpdates = new Set();
     async function updateOrderStatus(orderId, newStatus) {
-      const o = appState.orders.find(x => x.id === orderId);
+      const o = appState.orders.find(x => x.firebaseKey === orderId);
       if (!o?.firebaseKey || !['admin', 'super_admin'].includes(appState.currentUser?.role)) return;
+      if (pendingOrderStatusUpdates.has(orderId) || !['pending', 'confirmed', 'shipping', 'delivered', 'cancelled', 'returned'].includes(newStatus)) return;
 
       const oldStatus = o.status;
-      if (oldStatus === newStatus) return;
       const wasCredited = o.commissionCredited === true;
       const shouldCredit = newStatus === 'delivered' && !wasCredited;
       const shouldReverse = newStatus !== 'delivered' && wasCredited;
       const amount = Number(o.totalCommission);
-      if ((shouldCredit || shouldReverse) && (!o.marketerUid || !Number.isFinite(amount) || amount < 0)) {
-        showToast('بيانات عمولة الأوردر غير مكتملة؛ لم تتغير حالته.', 'error');
-        renderAdminDashboard();
-        return;
-      }
-      const changes = { [`orders/${o.firebaseKey}/status`]: newStatus };
-      if (shouldCredit || shouldReverse) {
-        changes[`orders/${o.firebaseKey}/commissionCredited`] = shouldCredit;
-        changes[`marketerProfiles/${o.marketerUid}/balance`] = firebase.database.ServerValue.increment(shouldCredit ? amount : -amount);
-        const quantities = new Map();
-        (o.items || []).forEach(item => {
-          const id = item.product?.id;
-          if (typeof id === 'string' && /^[A-Za-z0-9_-]+$/.test(id) && appState.products.some(product => product.id === id)) {
-            quantities.set(id, (quantities.get(id) || 0) + (Number(item.quantity) || 0));
-          }
-        });
-        quantities.forEach((quantity, id) => {
-          if (shouldReverse && Number(appState.products.find(product => product.id === id)?.soldCount || 0) < quantity) return;
-          changes[`products/${id}/soldCount`] = firebase.database.ServerValue.increment(shouldCredit ? quantity : -quantity);
-        });
-      }
       try {
-        await firebaseDB.ref().update(changes);
+        pendingOrderStatusUpdates.add(orderId);
+        await secureCall('secureSetOrderStatus', { orderKey:o.firebaseKey, status:newStatus });
       } catch (error) {
-        console.error('[Clovs Firebase] order status update failed:', error);
-        showToast('تعذر حفظ الحالة والعمولة معاً. تحقق من قواعد Firebase ورصيد المسوق.', 'error');
+        console.error('[Clovs Firebase] secure status update failed:', error);
+        showToast('تعذر حفظ الحالة والعمولة. حاول مجدداً أو اتصل بالإدارة.', 'error');
         renderAdminDashboard();
         return;
+      } finally {
+        pendingOrderStatusUpdates.delete(orderId);
       }
       showToast(shouldCredit
         ? `تم التسليم وإضافة ${amount} ج.م لرصيد المسوق فوراً.`
@@ -3420,45 +3689,16 @@
     }
 
     async function approveWithdrawRequest(reqId) {
-      const w = appState.withdrawRequests.find(x => x.id === reqId);
+      const w = appState.withdrawRequests.find(x => x.firebaseKey === reqId);
       if (!w?.firebaseKey || w.status !== 'pending') return;
       try {
-        await withdrawRequestsRef.child(w.firebaseKey).child('status').set('paid');
+        await secureCall('secureMarkWithdrawalPaid', { requestKey:w.firebaseKey });
       } catch (error) {
         console.error('[Clovs Firebase] withdrawal approval failed:', error);
         showToast('تعذر حفظ صرف طلب السحب في Firebase.', 'error');
         return;
       }
       showToast(`تم تأكيد صرف مبلغ ${w.amount} ج.م للمسوق ${w.userName} بنجاح!`);
-    }
-
-    function approveRegistration(reqId) {
-      const idx = appState.registrationRequests.findIndex(x => x.id === reqId);
-      if (idx > -1) {
-        const r = appState.registrationRequests.splice(idx, 1)[0];
-        appState.usersList.push({
-          id: 'USR-' + Math.floor(1000 + Math.random() * 9000),
-          name: r.name,
-          phone: r.phone || '',
-          username: r.username,
-          password: r.password,
-          role: r.role,
-          status: 'approved',
-          balance: 0,
-          payoutDetails: ''
-        });
-        showToast(`تمت الموافقة على انضمام ${r.name} وتفعيل حسابه.`);
-        renderAdminDashboard();
-      }
-    }
-
-    function rejectRegistration(reqId) {
-      const idx = appState.registrationRequests.findIndex(x => x.id === reqId);
-      if (idx > -1) {
-        appState.registrationRequests.splice(idx, 1);
-        showToast('تم رفض طلب التسجيل.');
-        renderAdminDashboard();
-      }
     }
 
     function renderSuperCustomizerView() {
@@ -3472,10 +3712,10 @@
       appState.slides.forEach((s, idx) => {
         slidesHtml += `
           <div class="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between gap-4">
-            <img src="${s.image}" class="w-16 h-10 object-cover rounded-lg" onerror="this.src='https://placehold.co/100x60/0f172a/ffffff?text=Clovs'">
+            <img src="${escapeHtml(safeImageUrl(s.image))}" class="w-16 h-10 object-cover rounded-lg" onerror="this.src='https://placehold.co/100x60/0f172a/ffffff?text=Clovs'">
             <div class="flex-1">
-              <div class="font-bold text-sm text-slate-900">${s.title}</div>
-              <div class="text-xs text-slate-500">${s.desc}</div>
+              <div class="font-bold text-sm text-slate-900">${escapeHtml(s.title)}</div>
+              <div class="text-xs text-slate-500">${escapeHtml(s.desc)}</div>
             </div>
             <button onclick="deleteSlide(${idx})" class="text-rose-500 hover:text-rose-700 p-2 text-xs font-bold">حذف</button>
           </div>
@@ -3505,11 +3745,11 @@
         uRows += `
           <tr class="border-b border-slate-100 text-xs hover:bg-slate-50/50 transition">
             <td class="py-3 px-3">
-              <div class="font-bold text-slate-900 text-sm">${u.name}</div>
-              <div class="text-[11px] text-slate-400 font-mono">${u.id}</div>
+              <div class="font-bold text-slate-900 text-sm">${escapeHtml(u.name)}</div>
+              <div class="text-[11px] text-slate-400 font-mono">${escapeHtml(u.id)}</div>
             </td>
-            <td class="py-3 px-3 font-semibold text-slate-700">${u.username}</td>
-            <td class="py-3 px-3 text-slate-600 font-mono">${u.phone || 'غير مسجل'}</td>
+            <td class="py-3 px-3 font-semibold text-slate-700">${escapeHtml(u.username)}</td>
+            <td class="py-3 px-3 text-slate-600 font-mono">${escapeHtml(u.phone || 'غير مسجل')}</td>
             <td class="py-3 px-3"><span class="px-2.5 py-1 rounded-full text-[11px] font-black ${roleBadgeColor}">${roleName}</span></td>
             <td class="py-3 px-3">${balanceDisplay}</td>
             <td class="py-3 px-3 font-mono font-bold text-slate-800 bg-slate-50 px-2 rounded-lg">${u.firebaseStaff || u.firebaseMarketer ? 'Firebase Auth' : (u.password || '—')}</td>
@@ -3538,11 +3778,11 @@
             <h3 class="font-black text-slate-900 text-lg border-b border-slate-100 pb-3">الهوية البصرية واللوجو</h3>
             <div>
               <label class="block text-xs font-bold text-slate-700 mb-1">اسم المنصة الرسمي</label>
-              <input type="text" id="cust-app-name" value="${theme.appName}" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm">
+              <input type="text" id="cust-app-name" value="${escapeHtml(theme.appName)}" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm">
             </div>
             <div>
               <label class="block text-xs font-bold text-slate-700 mb-1">رابط صورة اللوجو (URL)</label>
-              <input type="text" id="cust-logo-url" value="${theme.logoUrl}" placeholder="https://..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm">
+              <input type="text" id="cust-logo-url" value="${escapeHtml(theme.logoUrl)}" placeholder="https://..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm">
             </div>
             <div>
               <label class="block text-xs font-bold text-slate-700 mb-1">أو ارفع لوجو من جهازك:</label>
@@ -3557,19 +3797,23 @@
             <h3 class="font-black text-slate-900 text-lg border-b border-slate-100 pb-3">بيانات التواصل والدعم وجروب المسوقين</h3>
             <div>
               <label class="block text-xs font-bold text-slate-700 mb-1">رقم الهاتف الرسمي</label>
-              <input type="text" id="cust-contact-phone" value="${appState.contactInfo.phone}" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm">
+              <input type="text" id="cust-contact-phone" value="${escapeHtml(appState.contactInfo.phone)}" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm">
             </div>
             <div>
               <label class="block text-xs font-bold text-slate-700 mb-1">رقم الواتساب</label>
-              <input type="text" id="cust-contact-whatsapp" value="${appState.contactInfo.whatsapp}" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm">
+              <input type="text" id="cust-contact-whatsapp" value="${escapeHtml(appState.contactInfo.whatsapp)}" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm">
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">رقم محفظة استلام الدفع الإلكتروني</label>
+              <input type="tel" id="cust-contact-payment-phone" value="${escapeHtml(appState.contactInfo.paymentPhone || appState.contactInfo.whatsapp)}" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm" dir="ltr">
             </div>
             <div>
               <label class="block text-xs font-bold text-slate-700 mb-1">رابط جروب واتساب المسوقين الرسمي</label>
-              <input type="text" id="cust-contact-wagroup" value="${appState.contactInfo.whatsappGroup}" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm">
+              <input type="text" id="cust-contact-wagroup" value="${escapeHtml(appState.contactInfo.whatsappGroup)}" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm">
             </div>
             <div>
               <label class="block text-xs font-bold text-slate-700 mb-1">البريد الإلكتروني للدعم</label>
-              <input type="text" id="cust-contact-email" value="${appState.contactInfo.email}" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm">
+              <input type="text" id="cust-contact-email" value="${escapeHtml(appState.contactInfo.email)}" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm">
             </div>
             <button onclick="saveContactSettings()" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-2.5 rounded-xl text-sm transition shadow-sm">
               حفظ وتحديث بيانات التواصل
@@ -3578,13 +3822,13 @@
 
           <div class="bg-white p-6 rounded-3xl border border-slate-100 space-y-4 lg:col-span-2">
             <h3 class="font-black text-slate-900 text-lg border-b border-slate-100 pb-3">حفظ ونسخ بيانات الموقع (Backup & Restore)</h3>
-            <p class="text-xs text-slate-500 leading-relaxed">يمكنك تنزيل ملف كامل بكافة بيانات الموقع (العملاء، المسوقين، المنتجات، الأوردرات، الأرباح) والاحتفاظ به، أو رفع ملف واسترجاع كل بياناتك.</p>
+            <p class="text-xs text-slate-500 leading-relaxed">الملف يضم إعدادات السلايدر والتواصل والتصنيفات والهوية فقط. الحسابات والمنتجات والطلبات والأرصدة محفوظة في Firebase ولا يسترجعها هذا الملف.</p>
             <div class="flex flex-wrap gap-3 pt-2">
               <button onclick="exportSiteBackupJSON()" class="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-xl text-sm flex items-center justify-center gap-2">
-                <i class="fa-solid fa-download"></i> تنزيل ملف النسخة الاحتياطية (JSON)
+                <i class="fa-solid fa-download"></i> تنزيل نسخة الإعدادات (JSON)
               </button>
               <label class="flex-1 bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-xl text-sm flex items-center justify-center gap-2 cursor-pointer">
-                <i class="fa-solid fa-upload"></i> استرجاع نسخة سابقة
+                <i class="fa-solid fa-upload"></i> استرجاع إعدادات سابقة
                 <input type="file" accept=".json" onchange="importSiteBackupJSON(event)" class="hidden">
               </label>
             </div>
@@ -3695,21 +3939,24 @@
       }
     }
 
-    function handleLogoUpload(e) {
+    async function handleLogoUpload(e) {
       const file = e.target.files[0];
       if (!file) return;
-      const reader = new FileReader();
-      reader.onload = function(evt) {
-        document.getElementById('cust-logo-url').value = evt.target.result;
-        showToast('تم تحميل اللوجو بنجاح، اضغط حفظ لتطبيقه');
-      };
-      reader.readAsDataURL(file);
+      try {
+        document.getElementById('cust-logo-url').value = await optimizeProductImage(file);
+        showToast('تم تجهيز اللوجو، اضغط حفظ لتطبيقه');
+      } catch (error) {
+        showToast('تعذر تجهيز اللوجو؛ استخدم صورة أقل من 12 ميجابايت', 'error');
+      }
     }
 
     async function saveSiteBranding() {
       const name = document.getElementById('cust-app-name').value.trim();
       const logo = document.getElementById('cust-logo-url').value.trim();
-
+      if (name.length > 80 || (logo && !safeImageUrl(logo, '')) || logo.length > 1100000) {
+        showToast('اسم الموقع أو رابط/حجم اللوجو غير صالح', 'error');
+        return;
+      }
       try {
         await brandingRef.set({ appName: name || 'Clovs', logoUrl: logo });
         showToast('تم حفظ هوية الموقع في Firebase');
@@ -3722,11 +3969,15 @@
     async function saveContactSettings() {
       const phone = document.getElementById('cust-contact-phone')?.value.trim();
       const whatsapp = document.getElementById('cust-contact-whatsapp')?.value.trim();
+      const paymentPhone = document.getElementById('cust-contact-payment-phone')?.value.trim();
       const waGroup = document.getElementById('cust-contact-wagroup')?.value.trim();
       const email = document.getElementById('cust-contact-email')?.value.trim();
 
+      if (!/^01[0-9]{9}$/.test(paymentPhone || '')) return showToast('أدخل رقم محفظة مصري صحيحاً من 11 رقمًا', 'error');
+      if (waGroup && !safeWhatsAppUrl(waGroup)) return showToast('أدخل رابط جروب واتساب صحيحاً يبدأ بـ https://chat.whatsapp.com/', 'error');
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showToast('أدخل بريد دعم صحيحاً', 'error');
       try {
-        await contactInfoRef.set({ ...appState.contactInfo, phone, whatsapp, whatsappGroup: waGroup, email });
+        await contactInfoRef.set({ ...appState.contactInfo, phone, whatsapp, paymentPhone, whatsappGroup: waGroup, email });
         showToast('تم حفظ بيانات التواصل في Firebase');
       } catch (error) {
         console.error('[Clovs Firebase] contact save failed:', error);
@@ -3735,15 +3986,15 @@
     }
 
     let tempSlideImage = '';
-    function previewSlideImage(e) {
+    async function previewSlideImage(e) {
       const file = e.target.files[0];
       if (!file) return;
-      const reader = new FileReader();
-      reader.onload = function(evt) {
-        tempSlideImage = evt.target.result;
-        showToast('تم تحميل صورة الشريحة بنجاح');
-      };
-      reader.readAsDataURL(file);
+      try {
+        tempSlideImage = await optimizeProductImage(file);
+        showToast('تم تجهيز صورة الشريحة');
+      } catch (error) {
+        showToast('تعذر تجهيز صورة الشريحة؛ استخدم صورة أقل من 12 ميجابايت', 'error');
+      }
     }
 
     function openAddSlideModal() {
@@ -3793,6 +4044,10 @@
         showToast('يرجى كتابة عنوان ووصف الشريحة', 'error');
         return;
       }
+      if (!safeImageUrl(finalImg, '') || title.length > 160 || desc.length > 500) {
+        showToast('بيانات الشريحة أو رابط صورتها غير صالح', 'error');
+        return;
+      }
 
       const nextSlides = [...appState.slides, {
         id: 'SLD-' + Date.now(),
@@ -3832,6 +4087,19 @@
 
     function escapeHtml(value) {
       return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+    }
+
+    function safeImageUrl(value, fallback = PRODUCT_PLACEHOLDER) {
+      const url = String(value || '').trim();
+      return /^https:\/\/[^\s]+$/i.test(url) || /^data:image\/(?:png|jpeg|webp|gif|avif);base64,[a-z0-9+/=]+$/i.test(url)
+        ? url : fallback;
+    }
+
+    function safeWhatsAppUrl(value) {
+      try {
+        const url = new URL(String(value || ''));
+        return url.protocol === 'https:' && ['chat.whatsapp.com', 'wa.me'].includes(url.hostname) ? url.href : '';
+      } catch (error) { return ''; }
     }
 
     const SOCIAL_PROFILES = [
@@ -3912,19 +4180,29 @@
     function importSiteBackupJSON(event) {
       const file = event.target.files[0];
       if (!file) return;
+      if (file.size > 4 * 1024 * 1024) {
+        showToast('ملف الإعدادات كبير جداً', 'error');
+        return;
+      }
 
       const reader = new FileReader();
       reader.onload = async function(e) {
         try {
           const data = JSON.parse(e.target.result);
-          if (!data || typeof data !== 'object') {
+          if (!data || typeof data !== 'object' || Array.isArray(data)) {
             throw new Error('Invalid backup file');
           }
 
           if (firebaseAuth.currentUser?.uid !== FIREBASE_ADMIN_UID) throw new Error('Only the main administrator may restore settings');
-          if (Array.isArray(data.categories)) await categoriesRef.set(data.categories.filter(x => typeof x === 'string'));
+          const changes = {};
+          if (Array.isArray(data.categories)) {
+            const categories = [...new Set(data.categories.map(x => String(x).trim()).filter(Boolean))];
+            if (!categories.length || categories.length > 100) throw new Error('Invalid categories');
+            changes.catalogCategories = categories;
+          }
           if (Array.isArray(data.slides) && data.slides.length) {
-            await slidesRef.set(data.slides);
+            if (data.slides.length > 20 || data.slides.some(slide => !slide || typeof slide.title !== 'string' || typeof slide.desc !== 'string' || !safeImageUrl(slide.image, ''))) throw new Error('Invalid slides');
+            changes['siteSettings/slides'] = data.slides;
           }
           if (data.socialLinks && typeof data.socialLinks === 'object') {
             const links = {};
@@ -3933,13 +4211,23 @@
               if (value && !validSocialUrl(value, profile)) throw new Error('Invalid social link');
               links[profile.key] = value;
             }
-            await socialLinksRef.set(links);
+            changes['siteSettings/socialLinks'] = links;
           }
-          if (data.shippingRates && typeof data.shippingRates === 'object') await shippingRatesRef.set(data.shippingRates);
-          if (data.contactInfo && typeof data.contactInfo === 'object') await contactInfoRef.set(data.contactInfo);
+          if (data.shippingRates && typeof data.shippingRates === 'object' && !Array.isArray(data.shippingRates)) {
+            if (Object.entries(data.shippingRates).some(([gov, rate]) => !GOVERNORATES.includes(gov) || !Number.isFinite(rate) || rate < 0 || rate > 1000)) throw new Error('Invalid shipping rates');
+            changes['siteSettings/shippingRates'] = data.shippingRates;
+          }
+          if (data.contactInfo && typeof data.contactInfo === 'object' && !Array.isArray(data.contactInfo)) {
+            if (Object.values(data.contactInfo).some(value => typeof value !== 'string' || value.length > 500)) throw new Error('Invalid contact data');
+            changes['siteSettings/contactInfo'] = data.contactInfo;
+          }
           if (data.siteTheme && typeof data.siteTheme === 'object') {
-            await brandingRef.set({ appName: String(data.siteTheme.appName || 'Clovs'), logoUrl: String(data.siteTheme.logoUrl || '') });
+            const logoUrl = String(data.siteTheme.logoUrl || '');
+            if (logoUrl && !safeImageUrl(logoUrl, '')) throw new Error('Invalid logo URL');
+            changes['siteSettings/branding'] = { appName: String(data.siteTheme.appName || 'Clovs').slice(0, 80), logoUrl };
           }
+          if (!Object.keys(changes).length) throw new Error('No settings found');
+          await firebaseDB.ref().update(changes);
           showToast('تمت استعادة إعدادات الموقع والتصنيفات. الطلبات والحسابات والمنتجات لا تُستورد من الملف.');
         } catch (err) {
           console.error('[Clovs] backup restore failed:', err);
@@ -3998,97 +4286,11 @@
       }
     }
 
-    function saveUserEdit(userId) {
-      const user = appState.usersList.find(u => u.id === userId);
-      if (!user) return;
-
-      const name = document.getElementById('edit-user-name')?.value.trim();
-      const phone = document.getElementById('edit-user-phone')?.value.trim();
-      const username = document.getElementById('edit-user-username')?.value.trim();
-      const password = document.getElementById('edit-user-password')?.value.trim();
-      const role = document.getElementById('edit-user-role')?.value || user.role;
-      const status = document.getElementById('edit-user-status')?.value || user.status;
-      const balance = parseFloat(document.getElementById('edit-user-balance')?.value) || 0;
-      const payoutDetails = document.getElementById('edit-user-payout')?.value.trim();
-
-      if (!name || !username || password.length < 8) {
-        showToast('يرجى ملء البيانات وكلمة مرور لا تقل عن 8 أحرف أو أرقام', 'error');
-        return;
-      }
-
-      // Check username collision with other users
-      const exists = appState.usersList.some(u => u.id !== userId && u.username?.toLowerCase() === username.toLowerCase());
-      if (exists) {
-        showToast('اسم المستخدم هذا مستخدم مسبقاً من حساب آخر', 'error');
-        return;
-      }
-
-      user.name = name;
-      user.phone = phone;
-      user.username = username;
-      user.password = password;
-      user.role = role;
-      user.status = status;
-      user.balance = Math.max(0, balance);
-      user.payoutDetails = payoutDetails;
-
-      // If updating currently logged in user, sync state
-      if (appState.currentUser && appState.currentUser.id === user.id) {
-        appState.currentUser = { ...user };
-        updateHeaderAuthUI();
-      }
-
-      closeModal();
-      showToast(`تم حفظ وتحديث بيانات الحساب ورصيد ${user.name} بنجاح`);
-      renderSuperCustomizerView();
-    }
-
-    function deleteUser(userId) {
-      const user = appState.usersList.find(u => u.id === userId);
-      if (!user) return;
-
-      if (user.role === 'super_admin') {
-        showToast('لا يمكن حذف حساب المدير الأساسي', 'error');
-        return;
-      }
-
-      const actions = `
-        <button onclick="confirmDeleteUser('${user.id}')" class="bg-rose-600 hover:bg-rose-700 text-white font-bold px-6 py-2 rounded-xl text-xs">نعم، احذف الحساب</button>
-        <button onclick="closeModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-6 py-2 rounded-xl text-xs">إلغاء</button>
-      `;
-
-      openModal('تأكيد حذف الحساب', `هل أنت متأكد من رغبتك في حذف حساب "${user.name}" (${user.username}) نهائياً؟`, 'fa-triangle-exclamation', actions);
-    }
-
-    function confirmDeleteUser(userId) {
-      const idx = appState.usersList.findIndex(u => u.id === userId);
-      if (idx > -1) {
-        const deleted = appState.usersList.splice(idx, 1)[0];
-        closeModal();
-        showToast(`تم حذف حساب ${deleted.name} بنجاح`);
-        renderSuperCustomizerView();
-      }
-    }
-
-    function resetUserPasswordModal(userId) {
-      editUserModal(userId);
-    }
-
     function renderTopMarketersView() {
       const listContainer = document.getElementById('top-marketers-list');
-
-      // Calculate delivered count per marketer
-      const marketerScores = {};
-      appState.orders.forEach(o => {
-        if (o.status === 'delivered') {
-          marketerScores[o.marketerId] = (marketerScores[o.marketerId] || 0) + 1;
-        }
-      });
-
-      const marketers = appState.usersList.filter(u => u.role === 'marketer').map(u => ({
-        ...u,
-        deliveredCount: marketerScores[u.id] || 0
-      })).sort((a, b) => b.deliveredCount - a.deliveredCount).slice(0, 10);
+      const marketers = appState.publicLeaderboard
+        .filter(item => Number.isFinite(Number(item.count)) && Number(item.count) > 0)
+        .sort((a, b) => Number(b.count) - Number(a.count)).slice(0, 10);
 
       if (marketers.length === 0) {
         listContainer.innerHTML = `
@@ -4113,12 +4315,12 @@
                 #${idx + 1}
               </div>
               <div>
-                <h4 class="font-extrabold text-slate-900 text-sm sm:text-base">${m.name}</h4>
+                <h4 class="font-extrabold text-slate-900 text-sm sm:text-base">${escapeHtml(m.name)}</h4>
                 <span class="text-xs text-brand-600 font-bold">مسوق ذكي معتمد</span>
               </div>
             </div>
             <div class="text-left">
-              <div class="font-black text-brand-700 text-base sm:text-lg">${m.deliveredCount} أوردر</div>
+              <div class="font-black text-brand-700 text-base sm:text-lg">${Number(m.count)} أوردر</div>
               <div class="text-[11px] text-slate-400">تم تسليمه بنجاح</div>
             </div>
           </div>
@@ -4132,7 +4334,7 @@
       const grid = document.getElementById('shipping-rates-grid');
       let html = '';
       GOVERNORATES.forEach(gov => {
-        const rate = appState.shippingRates[gov] || 50;
+        const rate = appState.shippingRates[gov] ?? 50;
         html += `
           <div class="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between">
             <span class="font-bold text-slate-800 text-sm">${gov}</span>
@@ -4155,7 +4357,7 @@
             </div>
             <div>
               <div class="text-xs text-brand-700 font-bold">الهاتف المباشر</div>
-              <div class="text-lg font-black text-slate-900">${c.phone}</div>
+              <div class="text-lg font-black text-slate-900">${escapeHtml(c.phone)}</div>
             </div>
           </div>
 
@@ -4165,7 +4367,7 @@
             </div>
             <div>
               <div class="text-xs text-emerald-700 font-bold">تواصل واتساب السريع</div>
-              <div class="text-lg font-black text-slate-900">${c.whatsapp}</div>
+              <div class="text-lg font-black text-slate-900">${escapeHtml(c.whatsapp)}</div>
             </div>
           </div>
         </div>
@@ -4180,14 +4382,14 @@
               <p class="text-xs text-slate-300">لتبادل الخبرات، استلام المنتجات الحصرية، وتحديثات الشحن الفورية.</p>
             </div>
           </div>
-          <a href="${c.whatsappGroup}" target="_blank" class="inline-block bg-action-500 hover:bg-action-600 text-white font-extrabold px-6 py-3 rounded-xl transition text-sm shadow-lg shadow-action-500/20">
+          <a href="${escapeHtml(safeWhatsAppUrl(c.whatsappGroup) || '#')}" target="_blank" rel="noopener noreferrer" class="inline-block bg-action-500 hover:bg-action-600 text-white font-extrabold px-6 py-3 rounded-xl transition text-sm shadow-lg shadow-action-500/20">
             انضم الآن لجروب المسوقين على واتساب <i class="fa-solid fa-arrow-left mr-1"></i>
           </a>
         </div>
 
         <div class="p-5 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1">
-          <div><strong>ساعات العمل:</strong> ${c.hours}</div>
-          <div><strong>البريد الإلكتروني:</strong> ${c.email}</div>
+          <div><strong>ساعات العمل:</strong> ${escapeHtml(c.hours)}</div>
+          <div><strong>البريد الإلكتروني:</strong> ${escapeHtml(c.email)}</div>
         </div>
       `;
     }
@@ -4203,9 +4405,6 @@
       startFirebaseProductsSync();
       startFirebaseSiteSettingsSync();
     };
- 
-
-    <!-- redeploy -->
   </script>
 </body>
 </html>
