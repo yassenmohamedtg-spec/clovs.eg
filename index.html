@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="clovs-build" content="2026-09-27-v6-admin-full-catalog">
+  <meta name="clovs-build" content="2026-09-27-v8-orders-password-catalog-audit">
   <title id="html-page-title">Clovs | كلوفز للدروبشيبينج والتسويق بالعمولة في مصر</title>
   <meta name="description" content="Clovs كلوفز منصة دروبشيبينج في مصر للمسوقين: اختر منتجات للبيع أونلاين، حدد عمولتك، تابع الأوردرات والشحن، واستلم أرباحك بعد التسليم. تعرف على طريقة العمل وابدأ التسويق.">
   <meta name="robots" content="index,follow,max-image-preview:large">
@@ -626,9 +626,9 @@
           </div>
           <div class="flex flex-wrap items-center gap-3 w-full md:w-auto">
             <div class="relative flex-1 md:w-80">
-              <input type="text" id="product-search-input" oninput="renderProductsCatalog()" placeholder="ابحث باسم المنتج أو الوصف..." class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 pr-11 text-sm focus:outline-none focus:border-brand-500 transition">
+              <input type="text" id="product-search-input" oninput="appState.catalogCurrentPage=1; renderProductsCatalog()" placeholder="ابحث باسم المنتج أو الوصف..." class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 pr-11 text-sm focus:outline-none focus:border-brand-500 transition">
               <i class="fa-solid fa-search absolute right-4 top-3.5 text-slate-400"></i>
-              <button onclick="document.getElementById('product-search-input').value=''; renderProductsCatalog();" class="absolute left-3 top-3 text-slate-400 hover:text-slate-600 text-xs">
+              <button onclick="document.getElementById('product-search-input').value=''; appState.catalogCurrentPage=1; renderProductsCatalog();" class="absolute left-3 top-3 text-slate-400 hover:text-slate-600 text-xs">
                 <i class="fa-solid fa-xmark"></i>
               </button>
             </div>
@@ -927,6 +927,9 @@
       catalogPageSize: 20,
       catalogTotalPages: 1,
       catalogPageLoading: false,
+      catalogIndexLoaded: false,
+      catalogIndexLoading: false,
+      catalogIndexPromise: null,
       categories: ['إلكترونيات وموبايلات', 'ساعات وإكسسوارات', 'أدوات منزلية', 'عناية وصحة', 'ملابس وأحذية'],
       selectedCategoryFilter: 'all',
       orders: [],
@@ -1110,6 +1113,10 @@
           if (changed) {
             // Save each product immediately so a partial migration is never lost.
             await productsRef.child(id).update({ images: nextImages, image: nextImages[0] || '' });
+            try {
+              const record = buildCatalogRecord({ ...product, id, images:nextImages, image:nextImages[0] || '' }, id);
+              if (record) await productCatalogRef.child(id).set(record);
+            } catch (indexError) { console.error('[Clovs] migrated image catalog sync failed:', indexError); }
           }
           // Give the UI/network a tiny breather between products.
           await new Promise(resolve => setTimeout(resolve, 80));
@@ -1135,6 +1142,7 @@
       }
     }
     const productsRef = firebaseDB.ref('products');
+    const productCatalogRef = firebaseDB.ref('productCatalog');
     const slidesRef = firebaseDB.ref('siteSettings/slides');
     const socialLinksRef = firebaseDB.ref('siteSettings/socialLinks');
     const publicLeaderboardRef = firebaseDB.ref('publicLeaderboard');
@@ -1199,6 +1207,7 @@
     function clearProductCaches() {
       try {
         localStorage.removeItem('clovs_first6_products_v1');
+        localStorage.removeItem('clovs_catalog_index_v2');
         for (let i = localStorage.length - 1; i >= 0; i--) {
           const key = localStorage.key(i);
           if (key && key.startsWith('clovs_catalog_page_')) localStorage.removeItem(key);
@@ -1693,108 +1702,224 @@
       if (firebaseProductsListenerStarted) return;
       firebaseProductsListenerStarted = true;
 
-      // FAST PATH: fetch only the newest 6 records needed for the first paint.
-      // The complete catalog starts only after the storefront is already visible.
+      // FAST PATH: only six full products for the homepage first paint.
       productsRef.orderByChild('createdAt').limitToLast(6).once('value').then(snapshot => {
-        const firstSix = firebaseSnapshotToProducts(snapshot).slice(0, 6);
-        appState.products = firstSix;
+        const firstSix = firebaseSnapshotToProducts(snapshot).slice(0, 6).map(p => ({ ...p, _catalogOnly:false }));
         appState.cachedHomeProducts = firstSix;
-        appState.productsLoaded = false; // full catalog is still loading
-        try { if (!JSON.stringify(firstSix).includes('data:image/')) localStorage.setItem('clovs_first6_products_v1', JSON.stringify({ t: Date.now(), products:firstSix })); } catch(e) {}
+
+        // Merge the fresh homepage records into the global lightweight catalog instead of replacing it.
+        if (appState.catalogIndexLoaded) {
+          const byId = new Map(appState.products.map(p => [p.id, p]));
+          firstSix.forEach(product => byId.set(product.id, product));
+          appState.products = [...byId.values()].sort((a,b) => (Number(b.createdAt)||0) - (Number(a.createdAt)||0));
+          appState.productsLoaded = true;
+        } else {
+          appState.products = firstSix;
+          appState.productsLoaded = false;
+        }
+
+        try {
+          if (!JSON.stringify(firstSix).includes('data:image/')) {
+            localStorage.setItem('clovs_first6_products_v1', JSON.stringify({ t: Date.now(), products:firstSix }));
+          }
+        } catch(e) {}
         renderHomeView();
         firebaseBootReady('homeProducts6');
 
-        // Yield one frame so the browser can paint the page before the full download.
-        requestAnimationFrame(() => setTimeout(startFullProductsSync, 350));
+        requestAnimationFrame(() => setTimeout(startFullProductsSync, 250));
       }).catch(error => {
         console.error('[Clovs Firebase] first 6 products read failed:', error);
         if (!appState.cachedHomeProducts.length) firebaseBootError('homeProducts6', error);
         firebaseProductsListenerStarted = false;
+        startFullProductsSync();
       });
     }
 
+    function buildCatalogRecord(product, forcedId = '') {
+      const id = String(forcedId || product?.id || '').trim();
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return null;
+      const name = String(product?.name || '').trim().slice(0, 200);
+      const price = Number(product?.price);
+      if (!name || !Number.isFinite(price) || price <= 0) return null;
+      const rawImage = String(product?.image || (Array.isArray(product?.images) ? product.images[0] : '') || '').trim();
+      const image = /^https:\/\//i.test(rawImage) ? rawImage : 'https://placehold.co/500x500/059669/ffffff?text=Clovs';
+      return {
+        id,
+        name,
+        desc: String(product?.desc || '').slice(0, 1200),
+        category: String(product?.category || 'عام').slice(0, 120),
+        price,
+        discountPercent: Number.isFinite(Number(product?.discountPercent)) ? Number(product.discountPercent) : 0,
+        stock: Number.isInteger(Number(product?.stock)) && Number(product.stock) >= 0 ? Number(product.stock) : 0,
+        soldCount: Number.isFinite(Number(product?.soldCount)) ? Number(product.soldCount) : 0,
+        image,
+        createdAt: Number(product?.createdAt) || 0,
+        updatedAt: Number(product?.updatedAt) || 0,
+        _catalogOnly: true
+      };
+    }
+
+    function catalogSnapshotToProducts(snapshot) {
+      const raw = snapshot?.val?.() || {};
+      return Object.entries(raw)
+        .map(([id, value]) => buildCatalogRecord(value, id))
+        .filter(Boolean)
+        .sort((a,b) => (Number(b.createdAt)||0) - (Number(a.createdAt)||0));
+    }
+
+    function cacheCatalogIndex(products) {
+      try {
+        const safe = products.map(p => buildCatalogRecord(p, p.id)).filter(Boolean);
+        const serialized = JSON.stringify({ t: Date.now(), products:safe });
+        if (!serialized.includes('data:image/') && serialized.length < 4_500_000) {
+          localStorage.setItem('clovs_catalog_index_v2', serialized);
+        }
+      } catch(e) {}
+    }
+
+    function applyCatalogProducts(records) {
+      const fullById = new Map(
+        appState.products.filter(p => p && p.id && p._catalogOnly !== true).map(p => [p.id, p])
+      );
+      appState.products = records.map(record => {
+        const full = fullById.get(record.id);
+        return full ? { ...record, ...full, _catalogOnly:false } : { ...record, _catalogOnly:true };
+      });
+      // Keep any just-opened full record not yet present in the index until the next repair.
+      fullById.forEach((full, id) => {
+        if (!appState.products.some(p => p.id === id)) appState.products.push(full);
+      });
+      appState.products.sort((a,b) => (Number(b.createdAt)||0) - (Number(a.createdAt)||0));
+      appState.cachedCatalogProducts = appState.products.map(p => buildCatalogRecord(p, p.id)).filter(Boolean);
+      appState.catalogProductKeys = appState.products.map(p => p.id);
+      appState.catalogIndexLoaded = true;
+      appState.productsLoaded = true;
+      cacheCatalogIndex(appState.products);
+    }
+
     async function loadCatalogProductKeys() {
-      // Fetch IDs only. This is tiny compared with downloading every product and every legacy image.
       try {
         const url = `${firebaseConfig.databaseURL}/products.json?shallow=true`;
         const response = await fetch(url, { cache: 'no-store' });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const raw = await response.json();
-        const keys = raw && typeof raw === 'object' ? Object.keys(raw) : [];
-        // Firebase push IDs are chronological, so reversing gives newest first without downloading records.
-        appState.catalogProductKeys = keys.reverse();
-        appState.catalogTotalPages = Math.max(1, Math.ceil(keys.length / appState.catalogPageSize));
-        if (appState.catalogCurrentPage > appState.catalogTotalPages) appState.catalogCurrentPage = appState.catalogTotalPages;
-        return true;
+        appState.catalogProductKeys = raw && typeof raw === 'object' ? Object.keys(raw).reverse() : [];
+        return appState.catalogProductKeys;
       } catch (error) {
-        console.error('[Clovs Firebase] catalog key index failed:', error);
-        return false;
+        console.error('[Clovs Firebase] product key index failed:', error);
+        return appState.catalogProductKeys || [];
       }
+    }
+
+    async function syncProductCatalogIndex(products) {
+      const role = appState.currentUser?.role;
+      if (!['product_manager', 'admin', 'super_admin'].includes(role)) return false;
+      const records = (products || []).map(p => buildCatalogRecord(p, p.id)).filter(Boolean);
+      const existingSnap = await productCatalogRef.once('value');
+      const existing = existingSnap.val() || {};
+      const updates = {};
+      const liveIds = new Set(records.map(r => r.id));
+      records.forEach(record => { updates[record.id] = record; });
+      Object.keys(existing).forEach(id => { if (!liveIds.has(id)) updates[id] = null; });
+      if (Object.keys(updates).length) await productCatalogRef.update(updates);
+      const verify = await productCatalogRef.once('value');
+      const verified = catalogSnapshotToProducts(verify);
+      if (verified.length !== records.length) throw new Error('فشل التحقق من فهرس الكتالوج');
+      cacheCatalogIndex(verified);
+      return true;
+    }
+
+    async function fetchMissingCatalogRecords(ids) {
+      const unique = [...new Set(ids)].filter(id => /^[A-Za-z0-9_-]{1,128}$/.test(id));
+      const output = [];
+      const batchSize = 6;
+      for (let i = 0; i < unique.length; i += batchSize) {
+        const batch = unique.slice(i, i + batchSize);
+        const snaps = await Promise.all(batch.map(id => productsRef.child(id).once('value')));
+        snaps.forEach(snap => {
+          if (!snap.exists()) return;
+          const full = firebaseSnapshotToProducts({ val: () => ({ [snap.key]: snap.val() }) })[0];
+          const record = full ? buildCatalogRecord(full, snap.key) : null;
+          if (record) output.push(record);
+        });
+      }
+      return output;
+    }
+
+    async function loadCatalogIndex(options = {}) {
+      if (appState.catalogIndexLoading && appState.catalogIndexPromise) return appState.catalogIndexPromise;
+      if (appState.catalogIndexLoaded && !options.forceNetwork) return appState.products;
+
+      appState.catalogIndexLoading = true;
+      appState.catalogIndexPromise = (async () => {
+        try {
+          const [catalogSnap, productKeys] = await Promise.all([
+            productCatalogRef.once('value').catch(error => {
+              console.warn('[Clovs] productCatalog read unavailable, using products fallback:', error);
+              return null;
+            }),
+            loadCatalogProductKeys()
+          ]);
+
+          let records = catalogSnap ? catalogSnapshotToProducts(catalogSnap) : [];
+          const actualIds = new Set(productKeys || []);
+          if (actualIds.size) records = records.filter(record => actualIds.has(record.id));
+          const indexedIds = new Set(records.map(r => r.id));
+          const missingIds = [...actualIds].filter(id => !indexedIds.has(id));
+
+          // Self-heal old products that were created before productCatalog existed.
+          if (missingIds.length) {
+            const missing = await fetchMissingCatalogRecords(missingIds);
+            records = records.concat(missing);
+          }
+
+          // Absolute fallback for a project that has not created productCatalog yet.
+          if (!records.length && (!actualIds.size || productKeys.length)) {
+            const fullSnapshot = await productsRef.once('value');
+            records = firebaseSnapshotToProducts(fullSnapshot).map(p => buildCatalogRecord(p, p.id)).filter(Boolean);
+          }
+
+          const deduped = [...new Map(records.map(r => [r.id, r])).values()]
+            .sort((a,b) => (Number(b.createdAt)||0) - (Number(a.createdAt)||0));
+          applyCatalogProducts(deduped);
+
+          // Staff accounts repair the lightweight index once; storefront visitors only read it.
+          if (['product_manager', 'admin', 'super_admin'].includes(appState.currentUser?.role)) {
+            syncProductCatalogIndex(deduped).catch(error => console.error('[Clovs] catalog index repair failed:', error));
+          }
+          refreshProductViewsAfterFirebaseSync();
+          return appState.products;
+        } catch (error) {
+          console.error('[Clovs Firebase] full catalog index failed:', error);
+          if (!appState.catalogIndexLoaded) showToast('تعذر تحديث الكتالوج بالكامل حالياً.', 'error');
+          throw error;
+        } finally {
+          appState.catalogIndexLoading = false;
+          appState.catalogIndexPromise = null;
+        }
+      })();
+      return appState.catalogIndexPromise;
     }
 
     async function loadCatalogPage(page = 1, options = {}) {
-      if (appState.catalogPageLoading) return;
-      appState.catalogPageLoading = true;
       const requested = Math.max(1, Number(page) || 1);
-      try {
-        if (!appState.catalogProductKeys.length || options.refreshKeys) await loadCatalogProductKeys();
-        const totalPages = Math.max(1, appState.catalogTotalPages || 1);
-        const safePage = Math.min(requested, totalPages);
-        appState.catalogCurrentPage = safePage;
-        const start = (safePage - 1) * appState.catalogPageSize;
-        const ids = appState.catalogProductKeys.slice(start, start + appState.catalogPageSize);
-
-        const cacheKey = `clovs_catalog_page_${safePage}_v1`;
-        if (!options.forceNetwork) {
-          try {
-            const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null');
-            if (cached && Array.isArray(cached.products) && cached.products.length) {
-              appState.products = cached.products;
-              appState.cachedCatalogProducts = cached.products.slice();
-              appState.productsLoaded = true;
-              renderProductsCatalog();
-            }
-          } catch(e) {}
-        }
-
-        const snaps = await Promise.all(ids.map(id => productsRef.child(id).once('value')));
-        const products = snaps.map(snap => snap.exists() ? ({ id: snap.key, ...snap.val() }) : null).filter(Boolean);
-        appState.products = products;
-        appState.cachedCatalogProducts = products.slice();
-        appState.productsLoaded = true;
-        try {
-          const safeCatalog = products.map(p => ({
-            ...p,
-            images: Array.isArray(p.images) ? p.images.filter(x => typeof x === 'string' && /^https:\/\//i.test(x)).slice(0, 1) : [],
-            image: typeof p.image === 'string' && /^https:\/\//i.test(p.image) ? p.image : ''
-          }));
-          if (!JSON.stringify(safeCatalog).includes('data:image/')) localStorage.setItem(cacheKey, JSON.stringify({ t: Date.now(), products: safeCatalog }));
-        } catch(e) {}
-        refreshProductViewsAfterFirebaseSync();
-        renderCatalogPagination();
-        console.info(`[Clovs Firebase] catalog page ${safePage}/${totalPages} synced (${products.length} products)`);
-      } catch (error) {
-        console.error('[Clovs Firebase] catalog page failed:', error);
-        showToast('تعذر تحميل صفحة المنتجات حالياً.', 'error');
-      } finally {
-        appState.catalogPageLoading = false;
+      if (!appState.catalogIndexLoaded || options.forceNetwork) {
+        try { await loadCatalogIndex({ forceNetwork: !!options.forceNetwork }); }
+        catch (_) { return; }
       }
+      appState.catalogCurrentPage = requested;
+      renderProductsCatalog();
     }
 
     function startFullProductsSync() {
-      // Build a lightweight ID index, then download only the 20 products on the active page.
-      loadCatalogPage(1, { refreshKeys: true });
+      loadCatalogIndex().catch(() => {});
     }
 
     function goToCatalogPage(page) {
       const target = Math.max(1, Math.min(Number(page) || 1, appState.catalogTotalPages || 1));
-      if (target === appState.catalogCurrentPage && appState.productsLoaded) return;
-      appState.productsLoaded = false;
-      const grid = document.getElementById('products-catalog-grid');
-      if (grid) grid.innerHTML = '<div class="col-span-full py-12 text-center text-slate-500 text-sm">جاري تحميل الصفحة...</div>';
-      loadCatalogPage(target).then(() => {
-        document.getElementById('view-products')?.scrollIntoView({ behavior:'smooth', block:'start' });
-      });
+      appState.catalogCurrentPage = target;
+      renderProductsCatalog();
+      document.getElementById('view-products')?.scrollIntoView({ behavior:'smooth', block:'start' });
     }
 
     function renderCatalogPagination() {
@@ -1815,7 +1940,7 @@
         prev=n;
       });
       html += `<button onclick="goToCatalogPage(${current+1})" ${current===total?'disabled':''} class="px-4 py-2 rounded-xl text-sm font-black border border-slate-200 bg-white disabled:opacity-40">التالي</button>`;
-      html += `<span class="w-full text-center text-xs text-slate-500 mt-1">صفحة ${current} من ${total} · 20 منتج في الصفحة</span>`;
+      html += `<span class="w-full text-center text-xs text-slate-500 mt-1">صفحة ${current} من ${total} · 20 منتج في الصفحة · البحث يشمل الكتالوج كله</span>`;
       box.innerHTML = html;
     }
 
@@ -1949,8 +2074,22 @@
         && Array.isArray(saved.images) && saved.images.length === productData.images.length
         && saved.images.every((image, index) => image === productData.images[index]);
 
-      if (productId) await updateAndVerifyFirebase(ref, payload, validator, 'المنتج');
-      else await setAndVerifyFirebase(ref, payload, validator, 'المنتج');
+      const saved = productId
+        ? await updateAndVerifyFirebase(ref, payload, validator, 'المنتج')
+        : await setAndVerifyFirebase(ref, payload, validator, 'المنتج');
+
+      window.__clovsLastCatalogSyncError = null;
+      try {
+        const record = buildCatalogRecord(saved, id);
+        if (!record) throw new Error('بيانات فهرس المنتج غير صالحة');
+        await setAndVerifyFirebase(productCatalogRef.child(id), record,
+          value => value && value.id === id && value.name === record.name && Number(value.price) === Number(record.price),
+          'فهرس الكتالوج');
+      } catch (error) {
+        window.__clovsLastCatalogSyncError = error;
+        console.error('[Clovs Save] product saved but catalog index sync failed:', error);
+      }
+      clearProductCaches();
       return id;
     }
 
@@ -1959,8 +2098,16 @@
       await ref.remove();
       const snapshot = await readFirebaseValueWithRetry(ref);
       if (snapshot.exists()) throw new Error('فشل التحقق من حذف المنتج');
+      try {
+        await productCatalogRef.child(productId).remove();
+        const indexCheck = await readFirebaseValueWithRetry(productCatalogRef.child(productId));
+        if (indexCheck.exists()) throw new Error('تعذر حذف المنتج من فهرس الكتالوج');
+      } catch (error) {
+        console.error('[Clovs] catalog index delete failed:', error);
+      }
       clearProductCaches();
     }
+
     // =============================================================
 
     function showToast(message, type = 'success') {
@@ -2332,7 +2479,7 @@
 
     async function openHomeProduct(productId) {
       let existing = appState.products.find(p => p.id === productId);
-      if (existing && (Array.isArray(existing.images) || existing.desc !== undefined)) {
+      if (existing && existing._catalogOnly !== true && (Array.isArray(existing.images) || existing.desc !== undefined)) {
         switchView('product-details', productId);
         return;
       }
@@ -2341,6 +2488,7 @@
         if (!snap.exists()) { showToast('المنتج غير موجود حالياً.', 'error'); return; }
         const full = firebaseSnapshotToProducts({ val: () => ({ [productId]: snap.val() }) })[0];
         if (!full) { showToast('تعذر قراءة بيانات المنتج.', 'error'); return; }
+        full._catalogOnly = false;
         const idx = appState.products.findIndex(p => p.id === productId);
         if (idx >= 0) appState.products[idx] = full; else appState.products.unshift(full);
         switchView('product-details', productId);
@@ -2731,10 +2879,8 @@
       const pillsContainer = document.getElementById('products-category-pills');
       const query = (document.getElementById('product-search-input')?.value || '').toLowerCase().trim();
       const activeCat = appState.selectedCategoryFilter || 'all';
-      const catalogProducts = appState.productsLoaded ? appState.products : appState.cachedCatalogProducts;
-      renderCatalogPagination();
+      const catalogProducts = appState.catalogIndexLoaded ? appState.products : appState.cachedCatalogProducts;
 
-      // Render category filter chips
       if (pillsContainer) {
         let pillsHtml = `
           <button onclick="setCategoryFilter('all')" class="px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeCat === 'all' ? 'bg-brand-600 text-white shadow-md shadow-brand-600/20' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}">
@@ -2752,33 +2898,36 @@
         });
         pillsContainer.innerHTML = pillsHtml;
       }
-      
-      if (!appState.productsLoaded && catalogProducts.length === 0) {
-        grid.innerHTML = '<div class="col-span-full py-12 text-center text-slate-500 text-sm">جاري تحميل الكتالوج من Firebase...</div>';
+
+      if (!appState.catalogIndexLoaded && catalogProducts.length === 0) {
+        grid.innerHTML = '<div class="col-span-full py-12 text-center text-slate-500 text-sm">جاري تحميل جميع منتجات الكتالوج...</div>';
+        loadCatalogIndex().catch(() => {});
         return;
       }
 
       const filtered = catalogProducts.filter(p => {
-        const matchesQuery = p.name.toLowerCase().includes(query) || (p.desc && p.desc.toLowerCase().includes(query));
-        const matchesCategory = (activeCat === 'all') || ((p.category || 'عام') === activeCat);
+        const haystack = `${p.name || ''} ${p.desc || ''}`.toLowerCase();
+        const matchesQuery = !query || haystack.includes(query);
+        const matchesCategory = activeCat === 'all' || ((p.category || 'عام') === activeCat);
         return matchesQuery && matchesCategory;
       });
+
+      appState.catalogTotalPages = Math.max(1, Math.ceil(filtered.length / appState.catalogPageSize));
+      appState.catalogCurrentPage = Math.max(1, Math.min(appState.catalogCurrentPage || 1, appState.catalogTotalPages));
+      renderCatalogPagination();
 
       if (filtered.length === 0) {
         grid.innerHTML = `
           <div class="col-span-full py-16 text-center bg-white rounded-3xl border border-slate-100">
-            <div class="w-16 h-16 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center text-2xl mx-auto mb-3">
-              <i class="fa-solid fa-magnifying-glass"></i>
-            </div>
+            <div class="w-16 h-16 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center text-2xl mx-auto mb-3"><i class="fa-solid fa-magnifying-glass"></i></div>
             <h4 class="font-bold text-slate-800">لا توجد منتجات مطابقة للبحث أو التصنيف</h4>
-            <p class="text-slate-500 text-sm mt-1">جرّب اختيار تصنيف آخر أو مسح كلمة البحث.</p>
-          </div>
-        `;
+            <p class="text-slate-500 text-sm mt-1">البحث يتم الآن في جميع منتجات الموقع، مش الصفحة الحالية فقط.</p>
+          </div>`;
         return;
       }
 
-      // Render one visual row at a time instead of building the whole catalog in one giant DOM update.
-      // Desktop uses 5 columns, so 5 cards per batch. On smaller screens CSS simply wraps them naturally.
+      const start = (appState.catalogCurrentPage - 1) * appState.catalogPageSize;
+      const pageProducts = filtered.slice(start, start + appState.catalogPageSize);
       const renderToken = ++window.__clovsCatalogRenderToken;
       const ROW_SIZE = 5;
       grid.innerHTML = '';
@@ -2787,59 +2936,49 @@
         const isFav = appState.favorites.includes(prod.id);
         const prodCat = prod.category || 'عام';
         return `
-          <div class="product-card ${productCardClasses(prod)} bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col relative group cursor-pointer" tabindex="0" role="link" aria-label="فتح المنتج: ${escapeHtml(prod.name)}" onclick="openHomeProduct('${prod.id}')" onkeydown="if(event.target===this && (event.key==='Enter' || event.key===' ')){event.preventDefault();openHomeProduct('${prod.id}')}">
+          <div class="product-card ${productCardClasses(prod)} bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col relative group cursor-pointer" tabindex="0" role="link" aria-label="فتح المنتج: ${escapeHtml(prod.name)}" onclick="openHomeProduct('${prod.id}')" onkeydown="if(event.target===this && (event.key==='Enter' || event.key===' ')){event.preventDefault();openHomeProduct('${prod.id}')}" >
             <div class="relative h-52 bg-slate-100 overflow-hidden">
               <img src="${escapeHtml(productMainImage(prod))}" class="product-photo w-full h-full" loading="lazy" decoding="async" alt="${escapeHtml(prod.name)}" onerror="this.src='${PRODUCT_PLACEHOLDER}'">
               ${discountBadge(prod)}
               ${productHighlightBadge(prod)}
-              <button onclick="event.stopPropagation(); toggleFavorite('${prod.id}')" class="absolute top-3 left-3 w-9 h-9 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center shadow hover:scale-110 transition ${isFav ? 'text-rose-500' : 'text-slate-400 hover:text-rose-500'}">
-                <i class="fa-${isFav ? 'solid' : 'regular'} fa-heart text-base"></i>
-              </button>
+              <button onclick="event.stopPropagation(); toggleFavorite('${prod.id}')" class="absolute top-3 left-3 w-9 h-9 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center shadow hover:scale-110 transition ${isFav ? 'text-rose-500' : 'text-slate-400 hover:text-rose-500'}"><i class="fa-${isFav ? 'solid' : 'regular'} fa-heart text-base"></i></button>
             </div>
             <div class="p-6 flex-1 flex flex-col justify-between space-y-4">
               <div class="space-y-2">
                 <div class="flex items-center justify-between">
                   <span class="text-[11px] font-black text-brand-700 bg-brand-50 px-2.5 py-1 rounded-lg">${escapeHtml(prodCat)}</span>
-                  <span class="text-[11px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg">المخزون: ${escapeHtml(prod.stock ?? 10)}</span>
+                  <span class="text-[11px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg">المخزون: ${escapeHtml(prod.stock ?? 0)}</span>
                 </div>
                 <h3 class="font-black text-slate-900 text-xl">${escapeHtml(prod.name)}</h3>
                 <p class="text-slate-500 text-xs line-clamp-2 leading-relaxed">${escapeHtml(prod.desc || '')}</p>
                 ${productPriceHtml(prod)}
               </div>
             </div>
-          </div>
-        `;
-
+          </div>`;
       }
 
       let rowStart = 0;
       function renderNextCatalogRow() {
         if (renderToken !== window.__clovsCatalogRenderToken) return;
-        const row = filtered.slice(rowStart, rowStart + ROW_SIZE);
+        const row = pageProducts.slice(rowStart, rowStart + ROW_SIZE);
         if (!row.length) return;
-
-        const chunk = document.createDocumentFragment();
         const holder = document.createElement('div');
         holder.innerHTML = row.map(productCardMarkup).join('');
+        const chunk = document.createDocumentFragment();
         while (holder.firstElementChild) chunk.appendChild(holder.firstElementChild);
         grid.appendChild(chunk);
         rowStart += ROW_SIZE;
-
-        if (rowStart < filtered.length) {
-          // Let the browser paint this row before preparing the next one.
-          if ('requestIdleCallback' in window) {
-            requestIdleCallback(renderNextCatalogRow, { timeout: 120 });
-          } else {
-            requestAnimationFrame(() => setTimeout(renderNextCatalogRow, 0));
-          }
+        if (rowStart < pageProducts.length) {
+          if ('requestIdleCallback' in window) requestIdleCallback(renderNextCatalogRow, { timeout:120 });
+          else requestAnimationFrame(() => setTimeout(renderNextCatalogRow, 0));
         }
       }
-
       renderNextCatalogRow();
     }
 
     function setCategoryFilter(cat) {
       appState.selectedCategoryFilter = cat;
+      appState.catalogCurrentPage = 1;
       renderProductsCatalog();
     }
 
@@ -3005,7 +3144,7 @@
             <h3 class="text-xl sm:text-2xl font-black text-slate-900 mb-4">منتجات تانية من نفس الفئة</h3>
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               ${relatedProducts.map(item => `
-                <div class="product-card ${productCardClasses(item)} bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden cursor-pointer" tabindex="0" role="link" aria-label="فتح المنتج: ${escapeHtml(item.name)}" onclick="switchView('product-details', '${item.id}')" onkeydown="if(event.target===this && (event.key==='Enter' || event.key===' ')){event.preventDefault();switchView('product-details', '${item.id}')}">
+                <div class="product-card ${productCardClasses(item)} bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden cursor-pointer" tabindex="0" role="link" aria-label="فتح المنتج: ${escapeHtml(item.name)}" onclick="openHomeProduct('${item.id}')" onkeydown="if(event.target===this && (event.key==='Enter' || event.key===' ')){event.preventDefault();openHomeProduct('${item.id}')}">
                   <div class="relative h-44 sm:h-48 bg-slate-100">
                     <img src="${escapeHtml(productMainImage(item))}" alt="${escapeHtml(item.name)}" class="product-photo w-full h-full" onerror="this.src='${PRODUCT_PLACEHOLDER}'">
                     ${discountBadge(item)}
@@ -3273,7 +3412,7 @@
       renderCartView();
     }
 
-    function handlePaymentProofUpload(e) {
+    async function handlePaymentProofUpload(e) {
       const file = e.target.files[0];
       if (!file) return;
       if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 3 * 1024 * 1024) {
@@ -3281,16 +3420,33 @@
         showToast('ارفع إيصال PNG أو JPG أو WebP بحجم أقل من 3 ميجابايت', 'error');
         return;
       }
-      const reader = new FileReader();
-      reader.onload = function(evt) {
-        appState.activeCart.paymentProof.screenshot = evt.target.result;
+      try {
+        showToast('جاري تجهيز إيصال التحويل...', 'info');
+        appState.activeCart.paymentProof.screenshot = await optimizeProductImage(file);
         showToast('تم إرفاق إيصال التحويل بنجاح');
-      };
-      reader.readAsDataURL(file);
+      } catch (error) {
+        console.error('[Clovs] payment proof optimization failed:', error);
+        e.target.value = '';
+        showToast('تعذر تجهيز صورة الإيصال. جرّب صورة أخرى.', 'error');
+      }
     }
 
     let orderSubmissionInProgress = false;
     let pendingCheckoutKey = null;
+
+    async function readFreshCheckoutProducts(items) {
+      const ids = [...new Set(items.map(item => item?.product?.id).filter(id => /^[A-Za-z0-9_-]{1,128}$/.test(id || '')))];
+      if (ids.length !== new Set(items.map(item => item?.product?.id)).size) throw new Error('invalid-product-id');
+      const snaps = await Promise.all(ids.map(id => readFirebaseValueWithRetry(productsRef.child(id), 3, 180)));
+      const map = new Map();
+      snaps.forEach(snap => {
+        if (!snap.exists()) return;
+        const product = firebaseSnapshotToProducts({ val: () => ({ [snap.key]: snap.val() }) })[0];
+        if (product) map.set(snap.key, product);
+      });
+      return map;
+    }
+
     async function submitOrderCheckout() {
       if (!appState.currentUser?.firebaseMarketer || !firebaseAuth.currentUser) {
         showToast('يجب تسجيل الدخول كمسوق لإتمام الطلب', 'error');
@@ -3301,19 +3457,7 @@
         showToast('أضف منتجاً إلى السلة أولاً', 'error');
         return;
       }
-      const requestedQuantities = new Map();
-      for (const item of appState.activeCart.items) {
-        const current = appState.products.find(product => product.id === item.product.id);
-        const requested = (requestedQuantities.get(item.product.id) || 0) + item.quantity;
-        requestedQuantities.set(item.product.id, requested);
-        if (!current || !Number.isInteger(item.quantity) || item.quantity < 1 ||
-            !Number.isFinite(Number(current.stock ?? 10)) || requested > Number(current.stock ?? 10) ||
-            !Number.isFinite(item.commission) || item.commission < 0) {
-          showToast('منتج غير متاح أو كميته تغيرت. راجع السلة قبل إرسال الطلب.', 'error');
-          return;
-        }
-        item.product = current;
-      }
+
       const c = appState.activeCart.customer;
       if (!c.name.trim() || !c.phone.trim() || !c.address.trim()) {
         showToast('يرجى كتابة كافة بيانات العميل (الاسم، الهاتف، العنوان)', 'error');
@@ -3324,87 +3468,79 @@
         showToast('راجع رقم العميل والمحافظة وبيانات الطلب', 'error');
         return;
       }
-
       if (appState.activeCart.paymentMethod === 'online' && !appState.activeCart.paymentProof.screenshot) {
         showToast('يرجى رفع سكرين التحويل الإلكتروني قبل تأكيد الأوردر', 'error');
         return;
       }
 
-      const gov = c.governorate || 'القاهرة';
-      const shippingRate = appState.shippingRates[gov] ?? 50;
-
-      let subtotal = 0;
-      let totalCommission = 0;
-      appState.activeCart.items.forEach(i => {
-        subtotal += (getProductPrice(i.product) + i.commission) * i.quantity;
-        totalCommission += i.commission * i.quantity;
-      });
-      if (!Number.isFinite(subtotal) || !Number.isFinite(totalCommission) || subtotal <= 0 || totalCommission < 0) {
-        showToast('تعذر حساب إجمالي الطلب. راجع أسعار المنتجات', 'error');
-        return;
-      }
-
-      subtotal = Math.round(subtotal * 100) / 100;
-      totalCommission = Math.round(totalCommission * 100) / 100;
-      const orderKey = pendingCheckoutKey || ordersRef.push().key;
-      pendingCheckoutKey = orderKey;
-      const newOrder = {
-        id: 'ORD-' + orderKey,
-        marketerUid: firebaseAuth.currentUser.uid,
-        marketerId: appState.currentUser.id,
-        marketerName: appState.currentUser.name,
-        createdAt: firebase.database.ServerValue.TIMESTAMP,
-        date: new Date().toLocaleDateString('ar-EG'),
-        items: appState.activeCart.items.map(item => ({
-          product: {
-            id: item.product.id,
-            name: item.product.name,
-            price: item.product.price,
-            discountPercent: item.product.discountPercent || 0
-          },
-          quantity: item.quantity,
-          commission: item.commission,
-          selectedVariants: { ...(item.selectedVariants || {}) }
-        })),
-        customer: { ...c },
-        shippingRate: shippingRate,
-        subtotal: subtotal,
-        totalCommission: totalCommission,
-        grandTotal: Math.round((subtotal + shippingRate) * 100) / 100,
-        paymentMethod: appState.activeCart.paymentMethod,
-        paymentProof: { ...appState.activeCart.paymentProof },
-        commissionCredited: false,
-        status: 'pending' // 'pending', 'confirmed', 'shipping', 'delivered', 'cancelled', 'returned'
-      };
-
       const button = document.querySelector('button[onclick="submitOrderCheckout()"]');
       orderSubmissionInProgress = true;
-      if (button) button.disabled = true;
+      if (button) { button.disabled = true; button.dataset.oldText = button.innerHTML; button.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> جاري إرسال الأوردر...'; }
+
       try {
+        // Do not trust the active catalog page. Every item is re-read from its own Firebase product node.
+        const freshById = await readFreshCheckoutProducts(appState.activeCart.items);
+        const requestedQuantities = new Map();
+        for (const item of appState.activeCart.items) {
+          const id = item?.product?.id;
+          const current = freshById.get(id);
+          const qty = Number(item.quantity);
+          const commission = Number(item.commission);
+          const requested = (requestedQuantities.get(id) || 0) + qty;
+          requestedQuantities.set(id, requested);
+          if (!current || !Number.isInteger(qty) || qty < 1 || qty > 100 ||
+              !Number.isFinite(Number(current.stock)) || requested > Number(current.stock) ||
+              !Number.isFinite(commission) || commission < 0 || commission > 1000000) {
+            throw new Error('cart-product-changed');
+          }
+          item.product = current;
+        }
+
+        const orderKey = pendingCheckoutKey || ordersRef.push().key;
+        if (!orderKey) throw new Error('order-key-failed');
+        pendingCheckoutKey = orderKey; // idempotent retry uses the same key.
+        const payloadItems = appState.activeCart.items.map(item => ({
+          productId:item.product.id,
+          quantity:Number(item.quantity),
+          commission:Number(item.commission),
+          selectedVariants:{ ...(item.selectedVariants || {}) }
+        }));
+
         const result = await secureCall('secureCreateOrder', {
           orderKey,
-          items: newOrder.items.map(item => ({ productId:item.product.id, quantity:item.quantity, commission:item.commission, selectedVariants:item.selectedVariants })),
-          customer:newOrder.customer, paymentMethod:newOrder.paymentMethod, paymentProof:newOrder.paymentProof
+          items: payloadItems,
+          customer:{ name:c.name.trim(), phone:c.phone.trim(), address:c.address.trim(), governorate:c.governorate },
+          paymentMethod:appState.activeCart.paymentMethod,
+          paymentProof:{ ...appState.activeCart.paymentProof }
         });
-        newOrder.totalCommission = result.data.totalCommission;
+        if (!result?.data?.success) throw new Error(result?.data?.message || 'backend-did-not-confirm-order');
+
+        // A success toast is only allowed after the actual RTDB order node is readable and verified.
+        const savedSnapshot = await readFirebaseValueWithRetry(ordersRef.child(orderKey), 4, 220);
+        const savedOrder = savedSnapshot.val();
+        if (!savedSnapshot.exists() || savedOrder?.marketerUid !== firebaseAuth.currentUser.uid || savedOrder?.status !== 'pending') {
+          throw new Error('order-save-verification-failed');
+        }
+
+        pendingCheckoutKey = null;
+        appState.activeCart.items = [];
+        appState.activeCart.customer = { name: '', phone: '', address: '', governorate: 'القاهرة' };
+        appState.activeCart.paymentProof = { screenshot: '', senderPhone: '' };
+        updateCartBadge();
+        const commission = Number(savedOrder.totalCommission ?? result.data.totalCommission ?? 0);
+        openModal('تم تأكيد الأوردر بنجاح!', `تم حفظ أوردر رقم (${savedOrder.id || 'ORD-' + orderKey}) في Firebase وإرساله للمراجعة. ستُضاف عمولتك (${money(commission)} ج.م) عند التسليم.`);
+        switchView('marketer-dashboard');
       } catch (error) {
-        console.error('[Clovs Firebase] order save failed:', error);
-        showToast('تعذر إرسال الأوردر. راجع البيانات أو اتصل بالإدارة ثم حاول مجدداً.', 'error');
-        return;
+        console.error('[Clovs Firebase] order creation/verification failed:', error);
+        const code = String(error?.code || '');
+        const message = String(error?.message || '');
+        if (message.includes('cart-product-changed')) showToast('منتج في السلة غير متاح أو كميته تغيرت. راجع السلة وأعد المحاولة.', 'error');
+        else if (code.includes('functions/not-found') || code.includes('functions/unimplemented')) showToast('خدمة إنشاء الأوردر غير منشورة على Firebase Functions. ارفع Backend CLOVS المرفق.', 'error');
+        else showToast(`تعذر إنشاء الأوردر أو التحقق من حفظه: ${message.slice(0,100) || 'خطأ في الخدمة'}`, 'error');
       } finally {
         orderSubmissionInProgress = false;
-        if (button) button.disabled = false;
+        if (button) { button.disabled = false; button.innerHTML = button.dataset.oldText || 'تأكيد الأوردر'; delete button.dataset.oldText; }
       }
-
-      pendingCheckoutKey = null;
-      // Reset active cart
-      appState.activeCart.items = [];
-      appState.activeCart.customer = { name: '', phone: '', address: '', governorate: 'القاهرة' };
-      appState.activeCart.paymentProof = { screenshot: '', senderPhone: '' };
-      updateCartBadge();
-
-      openModal('تم تأكيد الأوردر بنجاح!', `تم استلام أوردر رقم (${newOrder.id}) بنجاح وإرساله للمراجعة وتأكيد الشحن. ستُضاف عمولتك (${newOrder.totalCommission} ج.م) فور التسليم.`);
-      switchView('marketer-dashboard');
     }
 
     function switchAuthTab(tab) {
@@ -3569,7 +3705,9 @@
           status: 'approved', balance: 0, payoutDetails: '',
           createdAt: firebase.database.ServerValue.TIMESTAMP
         };
-        await marketerProfilesRef.child(authUser.uid).set(profile);
+        await setAndVerifyFirebase(marketerProfilesRef.child(authUser.uid), profile,
+          saved => saved && saved.role === 'marketer' && saved.email === email && saved.usernameKey === usernameKey && saved.status === 'approved',
+          'حساب المسوق');
         profileSaved = true;
         setFirebaseMarketerSession(authUser, profile);
         e.target.reset();
@@ -3901,9 +4039,14 @@
         const snapshot = await productsRef.once('value');
         appState.adminProducts = firebaseSnapshotToProducts(snapshot);
         appState.adminProductsLoaded = true;
-        if (!appState.catalogProductKeys.length) {
-          appState.catalogProductKeys = appState.adminProducts.map(p => p.id);
-          appState.catalogTotalPages = Math.max(1, Math.ceil(appState.catalogProductKeys.length / appState.catalogPageSize));
+        appState.catalogProductKeys = appState.adminProducts.map(p => p.id);
+        try {
+          await syncProductCatalogIndex(appState.adminProducts);
+          // Reload the public lightweight catalog so additions/edits are immediately visible everywhere.
+          await loadCatalogIndex({ forceNetwork:true });
+        } catch (indexError) {
+          console.error('[Clovs] admin catalog index repair failed:', indexError);
+          showToast('تم تحميل المنتجات، لكن تعذر تحديث فهرس الكتالوج السريع.', 'error');
         }
       } catch (error) {
         console.error('[Clovs Firebase] admin products read failed:', error);
@@ -4375,19 +4518,19 @@
         appState.editingProductId = null;
         closeModal();
 
-        // Keep every view in sync without forcing public visitors to download the full catalog.
-        appState.catalogProductKeys = [];
+        // Refresh the authoritative admin list first, then the lightweight all-products catalog.
         appState.catalogCurrentPage = 1;
-        await Promise.all([
-          loadCatalogProductKeys(),
-          loadAdminProducts(true),
-          refreshNewestHomeProducts()
-        ]);
-        if (appState.currentView === 'products') await loadCatalogPage(1, { forceNetwork: true });
+        await loadAdminProducts(true);
+        await Promise.all([loadCatalogIndex({ forceNetwork:true }), refreshNewestHomeProducts()]);
+        if (appState.currentView === 'products') renderProductsCatalog();
 
-        showToast(editId
-          ? 'تم تحديث المنتج والتحقق من حفظه في Firebase'
-          : `تمت إضافة المنتج وحفظه بنجاح`);
+        if (window.__clovsLastCatalogSyncError) {
+          showToast('تم حفظ المنتج في Firebase، لكن فشل تحديث فهرس الكتالوج. راجع قواعد productCatalog.', 'error');
+        } else {
+          showToast(editId
+            ? 'تم تحديث المنتج والتحقق من حفظه في Firebase والكتالوج'
+            : 'تمت إضافة المنتج والتحقق من حفظه في Firebase والكتالوج');
+        }
         console.info('[Clovs Save] product verified:', savedId);
       } catch (error) {
         console.error('[Clovs Save] product save failed:', error);
@@ -4408,8 +4551,9 @@
         await firebaseDeleteProduct(id);
         appState.catalogProductKeys = [];
         appState.catalogCurrentPage = 1;
-        await Promise.all([loadCatalogProductKeys(), loadAdminProducts(true), refreshNewestHomeProducts()]);
-        if (appState.currentView === 'products') await loadCatalogPage(1, { forceNetwork: true });
+        await loadAdminProducts(true);
+        await Promise.all([loadCatalogIndex({ forceNetwork:true }), refreshNewestHomeProducts()]);
+        if (appState.currentView === 'products') renderProductsCatalog();
         showToast('تم حذف المنتج والتحقق من اختفائه من Firebase');
       } catch (error) {
         console.error('[Clovs Firebase] delete product failed:', error);
@@ -4546,25 +4690,58 @@
 
     function openMarketerPasswordModal(uid, name) {
       if (appState.currentUser?.role !== 'super_admin' || !/^[A-Za-z0-9_-]{1,128}$/.test(uid || '')) return;
+      const marketer = appState.usersList.find(user => user.uid === uid && user.firebaseMarketer);
       openModal(`تغيير كلمة مرور ${name}`, '');
       const content = document.getElementById('modal-message');
-      content.innerHTML = `<div class="space-y-3 text-right"><label class="block text-xs font-bold">كلمة المرور الجديدة</label><input id="admin-new-marketer-password" type="password" minlength="8" autocomplete="new-password" placeholder="8 أحرف على الأقل" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm" dir="ltr"><p class="text-[11px] text-slate-500">لن يتم عرض أو حفظ كلمة المرور داخل بيانات المسوق.</p></div>`;
+      content.innerHTML = `<div class="space-y-3 text-right">
+        <label class="block text-xs font-bold">كلمة المرور الجديدة</label>
+        <input id="admin-new-marketer-password" type="password" minlength="8" autocomplete="new-password" placeholder="8 أحرف على الأقل" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm" dir="ltr">
+        <p class="text-[11px] text-slate-500">التغيير المباشر يتم داخل Firebase Authentication عن طريق Cloud Function آمنة، ولا يتم تخزين كلمة المرور في Realtime Database.</p>
+        ${marketer?.email ? `<p class="text-[11px] text-slate-500" dir="ltr">${escapeHtml(marketer.email)}</p>` : ''}
+      </div>`;
       const actions = document.getElementById('modal-actions');
-      actions.innerHTML = `<button onclick="changeMarketerPassword('${uid}')" class="bg-brand-600 hover:bg-brand-700 text-white font-bold px-5 py-2.5 rounded-xl text-sm">حفظ كلمة المرور</button><button onclick="closeModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-5 py-2.5 rounded-xl text-sm">إلغاء</button>`;
+      actions.innerHTML = `<button onclick="changeMarketerPassword('${uid}')" class="bg-brand-600 hover:bg-brand-700 text-white font-bold px-5 py-2.5 rounded-xl text-sm">حفظ كلمة المرور</button>${marketer?.email ? `<button onclick="sendMarketerPasswordReset('${uid}')" class="bg-slate-900 hover:bg-slate-800 text-white font-bold px-5 py-2.5 rounded-xl text-sm">إرسال رابط إعادة تعيين</button>` : ''}<button onclick="closeModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-5 py-2.5 rounded-xl text-sm">إلغاء</button>`;
     }
 
     async function changeMarketerPassword(uid) {
       if (appState.currentUser?.role !== 'super_admin') return;
       const input = document.getElementById('admin-new-marketer-password');
       const password = input?.value || '';
-      if (password.length < 8) { showToast('كلمة المرور يجب أن تكون 8 أحرف على الأقل.', 'error'); return; }
+      if (password.length < 8 || password.length > 128) { showToast('كلمة المرور يجب أن تكون من 8 إلى 128 حرفاً.', 'error'); return; }
+      const buttons = [...document.querySelectorAll('#modal-actions button')];
+      buttons.forEach(button => button.disabled = true);
       try {
-        await secureCall('secureChangeMarketerPassword', { uid, password });
+        const result = await secureCall('secureChangeMarketerPassword', { uid, password });
+        if (!result?.data?.success || !Number(result.data.changedAt)) throw new Error('الخدمة لم تؤكد تغيير كلمة المرور');
+        const markerSnap = await readFirebaseValueWithRetry(marketerProfilesRef.child(uid).child('passwordChangedAt'), 4, 200);
+        if (Number(markerSnap.val()) !== Number(result.data.changedAt)) throw new Error('فشل التحقق من تسجيل تغيير كلمة المرور');
         closeModal();
-        showToast('تم تغيير كلمة مرور المسوق بنجاح.');
+        showToast('تم تغيير كلمة المرور داخل Firebase Authentication والتحقق من العملية.');
       } catch (error) {
         console.error('[Clovs Firebase] password change failed:', error);
-        showToast('تعذر تغيير كلمة المرور. يجب نشر Cloud Function باسم secureChangeMarketerPassword أولاً.', 'error');
+        const code = String(error?.code || '');
+        if (code.includes('functions/not-found') || code.includes('functions/unimplemented')) {
+          showToast('Cloud Function الخاصة بتغيير كلمة المرور غير منشورة. ارفع Backend CLOVS المرفق.', 'error');
+        } else {
+          showToast(`تعذر تغيير كلمة المرور: ${String(error?.message || error).slice(0,110)}`, 'error');
+        }
+      } finally {
+        buttons.forEach(button => { if (document.body.contains(button)) button.disabled = false; });
+      }
+    }
+
+    async function sendMarketerPasswordReset(uid) {
+      if (appState.currentUser?.role !== 'super_admin') return;
+      const marketer = appState.usersList.find(user => user.uid === uid && user.firebaseMarketer);
+      const email = String(marketer?.email || '').trim();
+      if (!email) { showToast('لا يوجد بريد إلكتروني صالح لهذا المسوق.', 'error'); return; }
+      try {
+        await firebaseAuth.sendPasswordResetEmail(email);
+        closeModal();
+        showToast('تم إرسال رابط إعادة تعيين كلمة المرور إلى بريد المسوق.');
+      } catch (error) {
+        console.error('[Clovs Firebase] reset email failed:', error);
+        showToast(`تعذر إرسال رابط إعادة التعيين: ${String(error?.message || error).slice(0,100)}`, 'error');
       }
     }
 
@@ -5622,9 +5799,14 @@
       startSmoothBootProgress();
 
       try {
-        const catalogCache = JSON.parse(localStorage.getItem('clovs_catalog_page_1_v1') || 'null');
+        const catalogCache = JSON.parse(localStorage.getItem('clovs_catalog_index_v2') || 'null');
         if (catalogCache && Array.isArray(catalogCache.products) && catalogCache.products.length) {
-          appState.cachedCatalogProducts = catalogCache.products.slice(0, 20);
+          const records = catalogCache.products.map(p => ({ ...p, _catalogOnly:true }));
+          appState.cachedCatalogProducts = records.slice();
+          appState.products = records.slice();
+          appState.catalogIndexLoaded = true;
+          appState.productsLoaded = true;
+          appState.catalogProductKeys = records.map(p => p.id);
         }
       } catch(e) {}
 
@@ -5633,9 +5815,11 @@
         const cached = JSON.parse(localStorage.getItem('clovs_first6_products_v1') || 'null');
         if (cached && Array.isArray(cached.products) && cached.products.length) {
           // Cache is only a speed layer. Firebase refresh starts immediately afterwards.
-          appState.products = cached.products.slice(0, 6);
+          if (!appState.catalogIndexLoaded) {
+            appState.products = cached.products.slice(0, 6);
+            appState.productsLoaded = false;
+          }
           appState.cachedHomeProducts = cached.products.slice(0, 6);
-          appState.productsLoaded = false;
           renderHomeView();
           usedFastCache = true;
           firebaseBootReady('homeProducts6');
