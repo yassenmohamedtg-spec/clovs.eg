@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="clovs-build" content="2026-09-27-v6-admin-full-catalog">
   <title id="html-page-title">Clovs | كلوفز للدروبشيبينج والتسويق بالعمولة في مصر</title>
   <meta name="description" content="Clovs كلوفز منصة دروبشيبينج في مصر للمسوقين: اختر منتجات للبيع أونلاين، حدد عمولتك، تابع الأوردرات والشحن، واستلم أرباحك بعد التسليم. تعرف على طريقة العمل وابدأ التسويق.">
   <meta name="robots" content="index,follow,max-image-preview:large">
@@ -916,6 +917,9 @@
       usersList: [],
       products: [],
       productsLoaded: false,
+      adminProducts: [],
+      adminProductsLoaded: false,
+      adminProductsLoading: false,
       cachedHomeProducts: [],
       cachedCatalogProducts: [],
       catalogProductKeys: [],
@@ -985,16 +989,53 @@
     const CLOUDINARY_CLOUD_NAME = 'ogrhqv8z';
     const CLOUDINARY_UPLOAD_PRESET = 'clovs_products';
 
+    function isCloudinaryImageUrl(value) {
+      try {
+        const url = new URL(String(value || ''));
+        return url.protocol === 'https:' && url.hostname === 'res.cloudinary.com' && url.pathname.includes('/image/upload/');
+      } catch (_) { return false; }
+    }
+
     async function uploadImageToCloudinary(source, folder = 'clovs') {
       if (!source) return '';
-      if (typeof source === 'string' && /^https:\/\//i.test(source)) return source;
-      const form = new FormData();
-      form.append('file', source);
-      form.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-      const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, { method: 'POST', body: form });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data.secure_url) throw new Error(data.error?.message || `Cloudinary upload failed (${response.status})`);
-      return data.secure_url;
+      // Already hosted on Cloudinary: keep the original asset URL without uploading a duplicate.
+      if (typeof source === 'string' && isCloudinaryImageUrl(source)) return source;
+
+      let lastError = null;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 30000);
+        try {
+          const form = new FormData();
+          form.append('file', source);
+          form.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+          const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
+            method: 'POST', body: form, signal: controller.signal
+          });
+          const data = await response.json().catch(() => ({}));
+          if (response.ok && data.secure_url) return data.secure_url;
+          const message = data.error?.message || `Cloudinary upload failed (${response.status})`;
+          lastError = new Error(message);
+          // 4xx validation errors will not improve on retry, except rate limiting.
+          if (response.status >= 400 && response.status < 500 && response.status !== 429) break;
+        } catch (error) {
+          lastError = error?.name === 'AbortError' ? new Error('انتهت مهلة رفع الصورة إلى Cloudinary') : error;
+        } finally {
+          clearTimeout(timer);
+        }
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      throw lastError || new Error('تعذر رفع الصورة إلى Cloudinary');
+    }
+
+    async function ensureCloudinaryImage(source, folder = 'clovs') {
+      const value = String(source || '').trim();
+      if (!value) return '';
+      if (isCloudinaryImageUrl(value)) return value;
+      // The generic placeholder is not a real product asset and does not need duplicating on Cloudinary.
+      if (/^https:\/\/placehold\.co\//i.test(value)) return value;
+      if (!/^https:\/\//i.test(value) && !/^data:image\//i.test(value)) throw new Error('رابط الصورة غير صالح');
+      return uploadImageToCloudinary(value, folder);
     }
 
     async function prepareAndUploadImage(file, folder) {
@@ -1108,6 +1149,79 @@
     const marketerUsernamesRef = firebaseDB.ref('marketerUsernames');
     const ordersRef = firebaseDB.ref('orders');
     const withdrawRequestsRef = firebaseDB.ref('withdrawRequests');
+
+    async function readFirebaseValueWithRetry(ref, attempts = 3, delayMs = 180) {
+      let lastError = null;
+      for (let i = 0; i < attempts; i++) {
+        try { return await ref.once('value'); }
+        catch (error) { lastError = error; }
+        if (i < attempts - 1) await new Promise(resolve => setTimeout(resolve, delayMs * (i + 1)));
+      }
+      throw lastError || new Error('تعذر التحقق من Firebase');
+    }
+
+    async function setAndVerifyFirebase(ref, value, validator = null, label = 'البيانات') {
+      let lastError = null;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          await ref.set(value);
+          const snapshot = await readFirebaseValueWithRetry(ref);
+          if (!snapshot.exists() || (validator && !validator(snapshot.val()))) {
+            throw new Error(`فشل التحقق من حفظ ${label}`);
+          }
+          return snapshot.val();
+        } catch (error) {
+          lastError = error;
+          if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 350));
+        }
+      }
+      throw lastError || new Error(`فشل حفظ ${label}`);
+    }
+
+    async function updateAndVerifyFirebase(ref, changes, validator = null, label = 'البيانات') {
+      let lastError = null;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          await ref.update(changes);
+          const snapshot = await readFirebaseValueWithRetry(ref);
+          if (!snapshot.exists() || (validator && !validator(snapshot.val()))) {
+            throw new Error(`فشل التحقق من تحديث ${label}`);
+          }
+          return snapshot.val();
+        } catch (error) {
+          lastError = error;
+          if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 350));
+        }
+      }
+      throw lastError || new Error(`فشل تحديث ${label}`);
+    }
+
+    function clearProductCaches() {
+      try {
+        localStorage.removeItem('clovs_first6_products_v1');
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('clovs_catalog_page_')) localStorage.removeItem(key);
+        }
+      } catch (_) {}
+    }
+
+    async function refreshNewestHomeProducts() {
+      if (appState.homeFeaturedProducts?._configured) return syncConfiguredHomeProducts();
+      try {
+        const snapshot = await productsRef.orderByChild('createdAt').limitToLast(6).once('value');
+        const newest = firebaseSnapshotToProducts(snapshot).slice(0, 6);
+        appState.cachedHomeProducts = newest;
+        if (appState.currentView === 'home') renderHomeView();
+        try {
+          if (!JSON.stringify(newest).includes('data:image/')) {
+            localStorage.setItem('clovs_first6_products_v1', JSON.stringify({ t: Date.now(), products: newest }));
+          }
+        } catch (_) {}
+      } catch (error) {
+        console.warn('[Clovs Firebase] home products refresh skipped:', error);
+      }
+    }
     let currentMarketerProfileRef = null;
     let withdrawListenerRef = null;
     let withdrawListenerCallback = null;
@@ -1707,7 +1821,10 @@
 
     function selectedHomeProductIds() {
       const config = appState.homeFeaturedProducts;
-      if (!config?._configured) return appState.products.slice(0, 5).map(product => product.id);
+      if (!config?._configured) {
+        const source = appState.cachedHomeProducts.length ? appState.cachedHomeProducts : appState.products;
+        return source.slice(0, 6).map(product => product.id);
+      }
       const ranks = config.items && typeof config.items === 'object' ? config.items : {};
       return Object.entries(ranks)
         .filter(([id, rank]) => /^[A-Za-z0-9_-]+$/.test(id) && Number.isFinite(Number(rank)))
@@ -1715,10 +1832,30 @@
         .map(([id]) => id);
     }
 
+    async function syncConfiguredHomeProducts() {
+      if (!appState.homeFeaturedProducts?._configured) return;
+      const ids = selectedHomeProductIds().slice(0, 6);
+      if (!ids.length) {
+        appState.cachedHomeProducts = [];
+        if (appState.currentView === 'home') renderHomeView();
+        return;
+      }
+      try {
+        const snapshots = await Promise.all(ids.map(id => productsRef.child(id).once('value')));
+        appState.cachedHomeProducts = snapshots
+          .map(snapshot => snapshot.exists() ? ({ id: snapshot.key, ...snapshot.val() }) : null)
+          .filter(Boolean);
+        if (appState.currentView === 'home') renderHomeView();
+      } catch (error) {
+        console.warn('[Clovs Firebase] featured home products read failed:', error);
+      }
+    }
+
     function startFirebaseSiteSettingsSync() {
       homeFeaturedProductsRef.on('value', snapshot => {
         appState.homeFeaturedProducts = snapshot.val();
-        if (appState.currentView === 'home') renderHomeView();
+        if (appState.homeFeaturedProducts?._configured) syncConfiguredHomeProducts();
+        else if (appState.currentView === 'home') renderHomeView();
         if (appState.currentView === 'product-manager') renderProductManagerDashboard();
         firebaseBootReady('homeFeaturedProducts');
       }, error => { console.error('[Clovs Firebase] home product selection read failed:', error); firebaseBootError('homeFeaturedProducts', error); });
@@ -1798,26 +1935,31 @@
     }
 
     async function firebaseSaveProduct(productId, productData) {
+      const ref = productId ? productsRef.child(productId) : productsRef.push();
+      const id = productId || ref.key;
       const payload = {
         ...productData,
-        updatedAt: firebase.database.ServerValue.TIMESTAMP
+        id,
+        updatedAt: firebase.database.ServerValue.TIMESTAMP,
+        ...(productId ? {} : { createdAt: firebase.database.ServerValue.TIMESTAMP })
       };
+      const validator = saved => saved && saved.id === id && saved.name === productData.name
+        && Number(saved.price) === Number(productData.price)
+        && Number(saved.stock) === Number(productData.stock)
+        && Array.isArray(saved.images) && saved.images.length === productData.images.length
+        && saved.images.every((image, index) => image === productData.images[index]);
 
-      if (productId) {
-        payload.id = productId;
-        await productsRef.child(productId).update(payload);
-        return productId;
-      }
-
-      const newRef = productsRef.push();
-      payload.id = newRef.key;
-      payload.createdAt = firebase.database.ServerValue.TIMESTAMP;
-      await newRef.set(payload);
-      return newRef.key;
+      if (productId) await updateAndVerifyFirebase(ref, payload, validator, 'المنتج');
+      else await setAndVerifyFirebase(ref, payload, validator, 'المنتج');
+      return id;
     }
 
     async function firebaseDeleteProduct(productId) {
-      await productsRef.child(productId).remove();
+      const ref = productsRef.child(productId);
+      await ref.remove();
+      const snapshot = await readFirebaseValueWithRetry(ref);
+      if (snapshot.exists()) throw new Error('فشل التحقق من حذف المنتج');
+      clearProductCaches();
     }
     // =============================================================
 
@@ -2069,7 +2211,7 @@
       else if (viewName === 'cart') renderCartView();
       else if (viewName === 'marketer-dashboard') renderMarketerDashboard();
       else if (viewName === 'marketer-withdraw') renderMarketerWithdrawView();
-      else if (viewName === 'product-manager') renderProductManagerDashboard();
+      else if (viewName === 'product-manager') { renderProductManagerDashboard(); loadAdminProducts(); }
       else if (viewName === 'admin-dashboard') renderAdminDashboard();
       else if (viewName === 'super-customizer') renderSuperCustomizerView();
       else if (viewName === 'contests') renderContestsView();
@@ -2211,8 +2353,9 @@
     function renderHomeView() {
       renderSlider();
       const grid = document.getElementById('home-products-grid');
-      const byId = new Map(appState.products.map(product => [product.id, product]));
-      const homeProducts = (appState.productsLoaded
+      const combined = [...appState.cachedHomeProducts, ...appState.products];
+      const byId = new Map(combined.map(product => [product.id, product]));
+      const homeProducts = (appState.homeFeaturedProducts?._configured
         ? selectedHomeProductIds().map(id => byId.get(id)).filter(Boolean)
         : (appState.cachedHomeProducts.length ? appState.cachedHomeProducts : appState.products)
       ).slice(0, 6);
@@ -3723,18 +3866,21 @@
           !firebaseAuth.currentUser || savingHomeFeaturedProducts) return;
       const selected = [...document.querySelectorAll('[data-home-featured-select]:checked')].map(input => input.value);
       if (selected.length > 50) return showToast('اختار حتى 50 منتجاً للرئيسية للحفاظ على سرعة الصفحة.', 'error');
-      if (selected.some(id => !appState.products.some(product => product.id === id))) {
+      if (selected.some(id => !(appState.adminProductsLoaded ? appState.adminProducts : appState.products).some(product => product.id === id))) {
         return showToast('اتغيرت قائمة المنتجات؛ حدّث الصفحة وحاول تاني.', 'error');
       }
       const button = document.querySelector('button[onclick="saveHomeFeaturedProducts()"]');
       savingHomeFeaturedProducts = true;
       if (button) button.disabled = true;
       try {
-        await homeFeaturedProductsRef.set({
+        const featuredPayload = {
           _configured: true,
           items: Object.fromEntries(selected.map((id, index) => [id, index + 1]))
-        });
-        showToast('اتحفظ اختيار منتجات الرئيسية بنجاح');
+        };
+        await setAndVerifyFirebase(homeFeaturedProductsRef, featuredPayload,
+          saved => saved && saved._configured === true && Object.keys(saved.items || {}).length === selected.length,
+          'منتجات الصفحة الرئيسية');
+        showToast('اتحفظ اختيار منتجات الرئيسية واتأكدنا من Firebase');
       } catch (error) {
         console.error('[Clovs Firebase] home product selection save failed:', error);
         showToast('تعذر حفظ اختيارات الرئيسية. راجع قواعد homeFeaturedProducts وصلاحيات الحساب.', 'error');
@@ -3744,16 +3890,55 @@
       }
     }
 
+    async function loadAdminProducts(force = false) {
+      const user = appState.currentUser;
+      if (!user || !['product_manager', 'admin', 'super_admin'].includes(user.role)) return;
+      if (appState.adminProductsLoading || (appState.adminProductsLoaded && !force)) return;
+      appState.adminProductsLoading = true;
+      if (appState.currentView === 'product-manager') renderProductManagerDashboard();
+      try {
+        // Admin-only full read. Public visitors still use the fast 20-product pagination path.
+        const snapshot = await productsRef.once('value');
+        appState.adminProducts = firebaseSnapshotToProducts(snapshot);
+        appState.adminProductsLoaded = true;
+        if (!appState.catalogProductKeys.length) {
+          appState.catalogProductKeys = appState.adminProducts.map(p => p.id);
+          appState.catalogTotalPages = Math.max(1, Math.ceil(appState.catalogProductKeys.length / appState.catalogPageSize));
+        }
+      } catch (error) {
+        console.error('[Clovs Firebase] admin products read failed:', error);
+        showToast('تعذر تحميل كل المنتجات للإدارة. راجع الاتصال وصلاحيات Firebase.', 'error');
+      } finally {
+        appState.adminProductsLoading = false;
+        if (appState.currentView === 'product-manager') renderProductManagerDashboard();
+      }
+    }
+
+    async function runLegacyProductMigrationManually() {
+      if (appState.currentUser?.role !== 'super_admin') return;
+      if (!confirm('سيتم رفع صور Base64 القديمة إلى Cloudinary وتحديث روابطها في Firebase. قد تستغرق العملية وقتاً حسب عدد الصور. متابعة؟')) return;
+      localStorage.removeItem('clovs_cloudinary_products_migration_v2');
+      legacyCloudinaryMigrationStarted = false;
+      showToast('بدأ نقل الصور القديمة. اترك الصفحة مفتوحة حتى انتهاء العملية.', 'info');
+      await migrateLegacyProductImagesToCloudinary();
+      await loadAdminProducts(true);
+    }
+
     function renderProductManagerDashboard() {
       const container = document.getElementById('view-product-manager');
       const user = appState.currentUser;
       if (!user || !['product_manager', 'admin', 'super_admin'].includes(user.role)) return;
 
+      const managerProducts = appState.adminProductsLoaded ? appState.adminProducts : [];
       let pRows = '';
-      if (appState.products.length === 0) {
+      if (appState.adminProductsLoading && !appState.adminProductsLoaded) {
+        pRows = `<tr><td colspan="8" class="text-center py-8 text-slate-500 text-sm"><i class="fa-solid fa-spinner fa-spin ml-2"></i>جاري تحميل كل المنتجات للإدارة...</td></tr>`;
+      } else if (!appState.adminProductsLoaded) {
+        pRows = `<tr><td colspan="8" class="text-center py-8 text-slate-500 text-sm">جاري تجهيز قائمة المنتجات...</td></tr>`;
+      } else if (managerProducts.length === 0) {
         pRows = `<tr><td colspan="8" class="text-center py-6 text-slate-400 text-sm">لا توجد منتجات في الكتالوج حالياً.</td></tr>`;
       } else {
-        appState.products.forEach(p => {
+        managerProducts.forEach(p => {
           pRows += `
             <tr class="border-b border-slate-100 text-sm">
               <td class="py-3 px-4 flex items-center gap-3">
@@ -3793,9 +3978,13 @@
         <div class="bg-white p-6 rounded-3xl border border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4">
           <div>
             <h2 class="text-2xl font-black text-slate-900">إدارة كتالوج المنتجات والتصنيفات</h2>
-            <p class="text-slate-500 text-sm">أضف المنتجات وصورها وأسعارها، واختار اللي يظهر منها على الصفحة الرئيسية.</p>
+            <p class="text-slate-500 text-sm">أضف المنتجات وصورها وأسعارها، واختار اللي يظهر منها على الصفحة الرئيسية. <span class="font-black text-brand-700">${appState.adminProductsLoaded ? managerProducts.length : '...'} منتج</span></p>
           </div>
           <div class="flex flex-wrap items-center gap-2">
+            <button onclick="loadAdminProducts(true)" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-3 rounded-2xl text-sm flex items-center gap-2">
+              <i class="fa-solid fa-rotate"></i> تحديث القائمة
+            </button>
+            ${user.role === 'super_admin' ? `<button onclick="runLegacyProductMigrationManually()" class="bg-sky-50 hover:bg-sky-100 text-sky-700 font-bold px-4 py-3 rounded-2xl text-sm flex items-center gap-2"><i class="fa-solid fa-cloud-arrow-up"></i> نقل الصور القديمة</button>` : ''}
             <button onclick="openAddProductModal()" class="bg-brand-600 hover:bg-brand-700 text-white font-bold px-6 py-3 rounded-2xl shadow-lg shadow-brand-600/20 text-sm flex items-center gap-2">
               <i class="fa-solid fa-plus"></i> إضافة منتج جديد
             </button>
@@ -3869,8 +4058,10 @@
           showToast('هذا التصنيف موجود بالفعل', 'error');
           return;
         }
+        const savedCategories = result.snapshot?.val();
+        if (!Array.isArray(savedCategories) || !savedCategories.includes(val)) throw new Error('فشل التحقق من التصنيف بعد الحفظ');
         input.value = '';
-        showToast(`تمت إضافة تصنيف "${val}" بنجاح`);
+        showToast(`تمت إضافة تصنيف "${val}" والتحقق من حفظه`);
       } catch (error) {
         console.error('[Clovs Firebase] category save failed:', error);
         showToast('فشل حفظ التصنيف في Firebase', 'error');
@@ -3882,9 +4073,11 @@
       if (appState.categories.length <= 1) return showToast('اترك تصنيفاً واحداً على الأقل للمنتجات', 'error');
       const catName = appState.categories[index];
       try {
-        await categoriesRef.transaction(current =>
+        const result = await categoriesRef.transaction(current =>
           (Array.isArray(current) ? current : appState.categories).filter(value => value !== catName));
-        showToast(`تم حذف تصنيف "${catName}"`);
+        const savedCategories = result.snapshot?.val();
+        if (!result.committed || !Array.isArray(savedCategories) || savedCategories.includes(catName)) throw new Error('فشل التحقق من حذف التصنيف');
+        showToast(`تم حذف تصنيف "${catName}" والتحقق من التغيير`);
       } catch (error) {
         console.error('[Clovs Firebase] category deletion failed:', error);
         showToast('فشل حذف التصنيف من Firebase', 'error');
@@ -4007,9 +4200,18 @@
       renderProductVariantsEditor();
     }
 
-    function editProductModal(id) {
-      const prod = appState.products.find(x => x.id === id);
+    async function editProductModal(id) {
+      let prod = (appState.adminProductsLoaded ? appState.adminProducts : appState.products).find(x => x.id === id);
+      if (!prod) {
+        try {
+          const snap = await productsRef.child(id).once('value');
+          if (snap.exists()) prod = { id: snap.key, ...snap.val() };
+        } catch (error) {
+          console.error('[Clovs Firebase] product edit read failed:', error);
+        }
+      }
       if (prod) openAddProductModal(prod);
+      else showToast('تعذر تحميل بيانات المنتج للتعديل.', 'error');
     }
 
     function openAddProductModal(prod = null) {
@@ -4101,6 +4303,7 @@
     }
 
     async function saveProductForm() {
+      if (window.__clovsProductSaveInProgress) return;
       const name = document.getElementById('pm-name').value.trim();
       const category = document.getElementById('pm-category')?.value || 'عام';
       const price = parseFloat(document.getElementById('pm-price').value);
@@ -4110,34 +4313,49 @@
       const pendingUrl = document.getElementById('pm-img-url').value.trim();
       if (productImagesLoading) return showToast('انتظر حتى ينتهي تجهيز الصور.', 'error');
       if (pendingUrl) return showToast('اضغط «إضافة الرابط» لإضافته إلى صور المنتج قبل الحفظ.', 'error');
-      const images = tempProductImages.length ? [...tempProductImages] : [PRODUCT_PLACEHOLDER];
-      if (images.reduce((size, image) => size + image.length, 0) > 12000000) {
-        showToast('حجم صور المنتج كبير. احذف بعض الصور أو ارفع نسخًا أصغر.', 'error');
+      if (!name || name.length > 200 || desc.length > 5000 || !Number.isFinite(price) || price <= 0 || price > 10000000
+        || !Number.isInteger(stock) || stock < 0 || stock > 1000000
+        || !Number.isInteger(discountPercent) || discountPercent < 0 || discountPercent >= 100) {
+        showToast('راجع الاسم والسعر والمخزون والوصف، والخصم لازم يكون بين 0 و99٪.', 'error');
         return;
       }
+
       const variants = tempProductVariants.map(variant => ({
         name: variant.name.trim(),
         options: [...new Set((variant.options || []).map(option => option.trim()).filter(Boolean))]
       }));
-
-      if (!name || !Number.isFinite(price) || price <= 0 || !Number.isInteger(stock) || stock < 0 || !Number.isInteger(discountPercent) || discountPercent < 0 || discountPercent >= 100) {
-        showToast('اكتب الاسم والسعر والمخزون بشكل صحيح، والخصم بين 0 و99٪.', 'error');
-        return;
-      }
-      if (variants.some(variant => !variant.name || !variant.options.length) || new Set(variants.map(variant => variant.name.toLowerCase())).size !== variants.length) {
-        showToast('اكتب اسمًا مختلفًا لكل متغير وخيارًا واحدًا على الأقل له.', 'error');
+      if (variants.some(variant => !variant.name || variant.name.length > 80 || !variant.options.length || variant.options.length > 50
+          || variant.options.some(option => option.length > 120))
+          || new Set(variants.map(variant => variant.name.toLowerCase())).size !== variants.length) {
+        showToast('راجع المتغيرات: اسم مختلف لكل متغير وخيار واحد على الأقل، ومن غير قيم طويلة جدًا.', 'error');
         return;
       }
 
       const editId = appState.editingProductId || null;
+      const rawImages = tempProductImages.length ? [...tempProductImages] : [PRODUCT_PLACEHOLDER];
+      if (rawImages.length > 8) return showToast('الحد الأقصى 8 صور لكل منتج.', 'error');
+
       const saveButton = document.querySelector('#modal-actions button[onclick="saveProductForm()"]');
+      window.__clovsProductSaveInProgress = true;
       if (saveButton) {
         saveButton.disabled = true;
-        saveButton.innerText = 'جاري الحفظ...';
+        saveButton.innerText = 'جاري رفع الصور والحفظ...';
       }
 
       try {
-        await firebaseSaveProduct(editId, {
+        // Any new/edited real image is normalized to Cloudinary before Firebase ever receives it.
+        const images = [];
+        for (const image of rawImages) {
+          const uploaded = await ensureCloudinaryImage(image, editId ? `clovs/products/${editId}` : 'clovs/products');
+          if (!uploaded || (!isCloudinaryImageUrl(uploaded) && uploaded !== PRODUCT_PLACEHOLDER)) {
+            throw new Error('تعذر تثبيت إحدى صور المنتج على Cloudinary');
+          }
+          if (!images.includes(uploaded)) images.push(uploaded);
+        }
+        if (!images.length) images.push(PRODUCT_PLACEHOLDER);
+
+        if (saveButton) saveButton.innerText = 'جاري التحقق من الحفظ...';
+        const savedId = await firebaseSaveProduct(editId, {
           name,
           category,
           price,
@@ -4151,15 +4369,33 @@
           source: editId ? 'website-edit' : 'website'
         });
 
+        clearProductCaches();
         tempProductImages = [];
         tempProductVariants = [];
         appState.editingProductId = null;
         closeModal();
-        showToast(editId ? 'تم تحديث المنتج وحفظه في Firebase' : 'تمت إضافة المنتج إلى Firebase بنجاح');
+
+        // Keep every view in sync without forcing public visitors to download the full catalog.
+        appState.catalogProductKeys = [];
+        appState.catalogCurrentPage = 1;
+        await Promise.all([
+          loadCatalogProductKeys(),
+          loadAdminProducts(true),
+          refreshNewestHomeProducts()
+        ]);
+        if (appState.currentView === 'products') await loadCatalogPage(1, { forceNetwork: true });
+
+        showToast(editId
+          ? 'تم تحديث المنتج والتحقق من حفظه في Firebase'
+          : `تمت إضافة المنتج وحفظه بنجاح`);
+        console.info('[Clovs Save] product verified:', savedId);
       } catch (error) {
-        console.error('[Clovs Firebase] save product failed:', error);
-        showToast('فشل حفظ المنتج في Firebase. راجع صلاحيات Database Rules.', 'error');
-        if (saveButton) {
+        console.error('[Clovs Save] product save failed:', error);
+        const message = String(error?.message || error || 'خطأ غير معروف').slice(0, 140);
+        showToast(`فشل حفظ المنتج: ${message}`, 'error');
+      } finally {
+        window.__clovsProductSaveInProgress = false;
+        if (saveButton && document.body.contains(saveButton)) {
           saveButton.disabled = false;
           saveButton.innerText = 'حفظ المنتج';
         }
@@ -4167,12 +4403,17 @@
     }
 
     async function deleteProduct(id) {
+      if (!id || !confirm('حذف المنتج نهائيًا من الكتالوج؟')) return;
       try {
         await firebaseDeleteProduct(id);
-        showToast('تم حذف المنتج من Firebase');
+        appState.catalogProductKeys = [];
+        appState.catalogCurrentPage = 1;
+        await Promise.all([loadCatalogProductKeys(), loadAdminProducts(true), refreshNewestHomeProducts()]);
+        if (appState.currentView === 'products') await loadCatalogPage(1, { forceNetwork: true });
+        showToast('تم حذف المنتج والتحقق من اختفائه من Firebase');
       } catch (error) {
         console.error('[Clovs Firebase] delete product failed:', error);
-        showToast('فشل حذف المنتج من Firebase. راجع الصلاحيات.', 'error');
+        showToast(`فشل حذف المنتج: ${String(error?.message || error).slice(0,120)}`, 'error');
       }
     }
 
@@ -4623,8 +4864,8 @@
         return;
       }
       try {
-        await staffRolesRef.child(uid).set(role);
-        showToast('تم تفعيل صلاحية الحساب في Firebase');
+        await setAndVerifyFirebase(staffRolesRef.child(uid), role, saved => saved === role, 'صلاحية الحساب');
+        showToast('تم تفعيل الصلاحية والتحقق من حفظها في Firebase');
       } catch (error) {
         console.error('[Clovs Firebase] staff role save failed:', error);
         showToast('فشل حفظ الصلاحية. راجع قواعد Firebase.', 'error');
@@ -4634,8 +4875,11 @@
     async function revokeStaffRole(uid) {
       if (firebaseAuth.currentUser?.uid !== FIREBASE_ADMIN_UID) return;
       try {
-        await staffRolesRef.child(uid).remove();
-        showToast('تم إلغاء صلاحية الحساب');
+        const ref = staffRolesRef.child(uid);
+        await ref.remove();
+        const snapshot = await readFirebaseValueWithRetry(ref);
+        if (snapshot.exists()) throw new Error('فشل التحقق من إلغاء الصلاحية');
+        showToast('تم إلغاء الصلاحية والتحقق من Firebase');
       } catch (error) {
         console.error('[Clovs Firebase] staff role revoke failed:', error);
         showToast('فشل إلغاء الصلاحية', 'error');
@@ -4661,8 +4905,15 @@
         return;
       }
       try {
-        await brandingRef.set({ appName: name || 'Clovs', logoUrl: logo });
-        showToast('تم حفظ هوية الموقع في Firebase');
+        if (firebaseAuth.currentUser?.uid !== FIREBASE_ADMIN_UID) throw new Error('هذه الصلاحية للمدير الأساسي فقط');
+        const cloudLogo = logo ? await ensureCloudinaryImage(logo, 'clovs/branding') : '';
+        const payload = { appName: name || 'Clovs', logoUrl: cloudLogo };
+        await setAndVerifyFirebase(brandingRef, payload,
+          saved => saved && saved.appName === payload.appName && saved.logoUrl === payload.logoUrl,
+          'هوية الموقع');
+        const logoInput = document.getElementById('cust-logo-url');
+        if (logoInput) logoInput.value = cloudLogo;
+        showToast('تم حفظ هوية الموقع والتحقق منها في Firebase');
       } catch (error) {
         console.error('[Clovs Firebase] branding save failed:', error);
         showToast('فشل حفظ هوية الموقع في Firebase', 'error');
@@ -4688,8 +4939,10 @@
       const button = document.getElementById('save-shipping-rates');
       if (button) button.disabled = true;
       try {
-        await shippingRatesRef.set(rates);
-        showToast('تم حفظ أسعار الشحن لجميع المحافظات في Firebase');
+        await setAndVerifyFirebase(shippingRatesRef, rates,
+          saved => saved && GOVERNORATES.every(gov => Number(saved[gov]) === Number(rates[gov])),
+          'أسعار الشحن');
+        showToast('تم حفظ أسعار الشحن والتحقق منها في Firebase');
       } catch (error) {
         console.error('[Clovs Firebase] shipping save failed:', error);
         showToast('فشل حفظ أسعار الشحن. راجع صلاحية siteSettings في Firebase.', 'error');
@@ -4709,8 +4962,11 @@
       if (waGroup && !safeWhatsAppUrl(waGroup)) return showToast('أدخل رابط جروب واتساب صحيحاً يبدأ بـ https://chat.whatsapp.com/', 'error');
       if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showToast('أدخل بريد دعم صحيحاً', 'error');
       try {
-        await contactInfoRef.set({ ...appState.contactInfo, phone, whatsapp, paymentPhone, whatsappGroup: waGroup, email });
-        showToast('تم حفظ بيانات التواصل في Firebase');
+        const payload = { ...appState.contactInfo, phone, whatsapp, paymentPhone, whatsappGroup: waGroup, email };
+        await setAndVerifyFirebase(contactInfoRef, payload,
+          saved => saved && saved.paymentPhone === paymentPhone && saved.whatsappGroup === waGroup && saved.email === email,
+          'بيانات التواصل');
+        showToast('تم حفظ بيانات التواصل والتحقق منها في Firebase');
       } catch (error) {
         console.error('[Clovs Firebase] contact save failed:', error);
         showToast('فشل حفظ بيانات التواصل في Firebase', 'error');
@@ -4781,21 +5037,23 @@
         return;
       }
 
-      const nextSlides = [...appState.slides, {
-        id: 'SLD-' + Date.now(),
-        title,
-        desc,
-        tag,
-        image: finalImg
-      }];
-
       const button = document.querySelector('#modal-actions button[onclick="saveNewSlide()"]');
-      if (button) { button.disabled = true; button.innerText = 'جاري الحفظ...'; }
+      if (button) { button.disabled = true; button.innerText = 'جاري رفع الصورة والحفظ...'; }
       try {
-        await slidesRef.set(nextSlides);
+        const cloudImage = await ensureCloudinaryImage(finalImg, 'clovs/sliders');
+        const nextSlides = [...appState.slides, {
+          id: 'SLD-' + Date.now(),
+          title,
+          desc,
+          tag,
+          image: cloudImage
+        }];
+        await setAndVerifyFirebase(slidesRef, nextSlides,
+          saved => Array.isArray(saved) && saved.length === nextSlides.length && saved[saved.length - 1]?.id === nextSlides[nextSlides.length - 1].id,
+          'السلايدر');
         tempSlideImage = '';
         closeModal();
-        showToast('تم حفظ شريحة السلايدر في قاعدة البيانات');
+        showToast('تم حفظ شريحة السلايدر والتحقق منها في Firebase');
       } catch (error) {
         console.error('[Clovs Firebase] save slide failed:', error);
         showToast('فشل حفظ السلايدر. راجع صلاحيات قاعدة البيانات أو حجم الصورة.', 'error');
@@ -4809,8 +5067,11 @@
         return;
       }
       try {
-        await slidesRef.set(appState.slides.filter((_, index) => index !== idx));
-        showToast('تم حذف الشريحة وحفظ التغيير');
+        const nextSlides = appState.slides.filter((_, index) => index !== idx);
+        await setAndVerifyFirebase(slidesRef, nextSlides,
+          saved => Array.isArray(saved) && saved.length === nextSlides.length,
+          'السلايدر');
+        showToast('تم حذف الشريحة والتحقق من التغيير في Firebase');
       } catch (error) {
         console.error('[Clovs Firebase] delete slide failed:', error);
         showToast('فشل حذف الشريحة من قاعدة البيانات', 'error');
@@ -4859,8 +5120,10 @@
         links[profile.key] = value;
       }
       try {
-        await socialLinksRef.set(links);
-        showToast('تم حفظ حسابات السوشيال في قاعدة البيانات');
+        await setAndVerifyFirebase(socialLinksRef, links,
+          saved => saved && SOCIAL_PROFILES.every(profile => String(saved[profile.key] || '') === String(links[profile.key] || '')),
+          'روابط السوشيال');
+        showToast('تم حفظ حسابات السوشيال والتحقق منها في Firebase');
       } catch (error) {
         console.error('[Clovs Firebase] save social links failed:', error);
         showToast('فشل حفظ الروابط. راجع صلاحيات قاعدة البيانات.', 'error');
@@ -5009,9 +5272,11 @@
         return;
       }
       try {
-        await marketerProfilesRef.child(uid).update({ name, phone, payoutDetails, status });
+        await updateAndVerifyFirebase(marketerProfilesRef.child(uid), { name, phone, payoutDetails, status },
+          saved => saved && saved.name === name && saved.phone === phone && saved.status === status && String(saved.payoutDetails || '') === String(payoutDetails || ''),
+          'بيانات المسوق');
         closeModal();
-        showToast('تم حفظ بيانات المسوق في Firebase');
+        showToast('تم حفظ بيانات المسوق والتحقق منها في Firebase');
       } catch (error) {
         console.error('[Clovs Firebase] marketer edit failed:', error);
         showToast('فشل حفظ بيانات المسوق. راجع قواعد Firebase', 'error');
@@ -5219,19 +5484,28 @@
       }
       const button = document.getElementById('contest-save-button');
       button.disabled = true;
+      button.innerText = 'جاري الحفظ...';
       const ref = key ? contestsRef.child(key) : contestsRef.push();
       try {
-        await ref.set({ title, description, targetOrders, prizeAmount, startAt, endAt, image,
+        const cloudImage = image ? await ensureCloudinaryImage(image, 'clovs/contests') : '';
+        const payload = { title, description, targetOrders, prizeAmount, startAt, endAt, image: cloudImage,
           enabled: original ? original.enabled !== false : true,
           createdAt: original?.createdAt || firebase.database.ServerValue.TIMESTAMP,
-          updatedAt: firebase.database.ServerValue.TIMESTAMP });
+          updatedAt: firebase.database.ServerValue.TIMESTAMP };
+        await setAndVerifyFirebase(ref, payload,
+          saved => saved && saved.title === title && Number(saved.targetOrders) === targetOrders
+            && Number(saved.prizeAmount) === prizeAmount && String(saved.image || '') === String(cloudImage || ''),
+          'المسابقة');
         tempContestImage = '';
         closeModal();
-        showToast('تم حفظ المسابقة في Firebase');
+        showToast('تم حفظ المسابقة والتحقق منها في Firebase');
       } catch (error) {
         console.error('[Clovs Firebase] contest save failed:', error);
         showToast('فشل حفظ المسابقة. راجع صلاحيات siteSettings أو حجم الصورة.', 'error');
-      } finally { button.disabled = false; }
+      } finally {
+        button.disabled = false;
+        button.innerText = 'حفظ في Firebase';
+      }
     }
 
     async function toggleContestVisibility(key) {
@@ -5239,8 +5513,12 @@
       const contest = appState.contests.find(item => item.firebaseKey === key);
       if (!contest) return;
       try {
-        await contestsRef.child(key).update({ enabled: contest.enabled === false, updatedAt: firebase.database.ServerValue.TIMESTAMP });
-        showToast('تم تحديث ظهور المسابقة في Firebase');
+        const nextEnabled = contest.enabled === false;
+        await updateAndVerifyFirebase(contestsRef.child(key),
+          { enabled: nextEnabled, updatedAt: firebase.database.ServerValue.TIMESTAMP },
+          saved => saved && saved.enabled === nextEnabled,
+          'حالة المسابقة');
+        showToast('تم تحديث ظهور المسابقة والتحقق من Firebase');
       } catch (error) { showToast('تعذر تحديث المسابقة في Firebase', 'error'); }
     }
 
@@ -5254,9 +5532,12 @@
     async function deleteContest(key) {
       if (firebaseAuth.currentUser?.uid !== FIREBASE_ADMIN_UID) return;
       try {
-        await contestsRef.child(key).remove();
+        const ref = contestsRef.child(key);
+        await ref.remove();
+        const snapshot = await readFirebaseValueWithRetry(ref);
+        if (snapshot.exists()) throw new Error('فشل التحقق من حذف المسابقة');
         closeModal();
-        showToast('تم حذف المسابقة من Firebase');
+        showToast('تم حذف المسابقة والتحقق من Firebase');
       } catch (error) { showToast('فشل حذف المسابقة من Firebase', 'error'); }
     }
 
