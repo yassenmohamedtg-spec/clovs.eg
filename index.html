@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="clovs-build" content="2026-09-27-v8-orders-password-catalog-audit">
+  <meta name="clovs-build" content="2026-09-27-v9-images-return-state">
   <title id="html-page-title">Clovs | كلوفز للدروبشيبينج والتسويق بالعمولة في مصر</title>
   <meta name="description" content="Clovs كلوفز منصة دروبشيبينج في مصر للمسوقين: اختر منتجات للبيع أونلاين، حدد عمولتك، تابع الأوردرات والشحن، واستلم أرباحك بعد التسليم. تعرف على طريقة العمل وابدأ التسويق.">
   <meta name="robots" content="index,follow,max-image-preview:large">
@@ -964,6 +964,7 @@
       currentSlideIdx: 0,
       currentView: 'home',
       selectedProductId: null,
+      productReturnState: null,
       editingProductId: null
     };
 
@@ -1208,6 +1209,7 @@
       try {
         localStorage.removeItem('clovs_first6_products_v1');
         localStorage.removeItem('clovs_catalog_index_v2');
+        localStorage.removeItem('clovs_catalog_index_v3');
         for (let i = localStorage.length - 1; i >= 0; i--) {
           const key = localStorage.key(i);
           if (key && key.startsWith('clovs_catalog_page_')) localStorage.removeItem(key);
@@ -1741,8 +1743,18 @@
       const name = String(product?.name || '').trim().slice(0, 200);
       const price = Number(product?.price);
       if (!name || !Number.isFinite(price) || price <= 0) return null;
-      const rawImage = String(product?.image || (Array.isArray(product?.images) ? product.images[0] : '') || '').trim();
-      const image = /^https:\/\//i.test(rawImage) ? rawImage : 'https://placehold.co/500x500/059669/ffffff?text=Clovs';
+      // Backward compatible with every catalog format CLOVS has used so far.
+      // Older fast indexes stored the lightweight picture under `thumbnail`, while newer ones use `image`.
+      const legacyThumbnail = String(product?.thumbnail || '').trim();
+      const firstArrayImage = Array.isArray(product?.images)
+        ? product.images[0]
+        : (product?.images && typeof product.images === 'object' ? Object.values(product.images)[0] : '');
+      const rawImage = String(legacyThumbnail || product?.image || firstArrayImage || '').trim();
+      let image = PRODUCT_PLACEHOLDER;
+      if (/^https:\/\//i.test(rawImage)) image = safeImageUrl(rawImage, PRODUCT_PLACEHOLDER);
+      // Old productCatalog thumbnails may be small base64 previews. Keep only reasonably small previews here;
+      // never duplicate the original multi-megabyte product image into the lightweight index.
+      else if (/^data:image\//i.test(rawImage) && rawImage.length <= 350000) image = safeImageUrl(rawImage, PRODUCT_PLACEHOLDER);
       return {
         id,
         name,
@@ -1753,6 +1765,7 @@
         stock: Number.isInteger(Number(product?.stock)) && Number(product.stock) >= 0 ? Number(product.stock) : 0,
         soldCount: Number.isFinite(Number(product?.soldCount)) ? Number(product.soldCount) : 0,
         image,
+        thumbnail: image,
         createdAt: Number(product?.createdAt) || 0,
         updatedAt: Number(product?.updatedAt) || 0,
         _catalogOnly: true
@@ -1772,7 +1785,7 @@
         const safe = products.map(p => buildCatalogRecord(p, p.id)).filter(Boolean);
         const serialized = JSON.stringify({ t: Date.now(), products:safe });
         if (!serialized.includes('data:image/') && serialized.length < 4_500_000) {
-          localStorage.setItem('clovs_catalog_index_v2', serialized);
+          localStorage.setItem('clovs_catalog_index_v3', serialized);
         }
       } catch(e) {}
     }
@@ -1912,7 +1925,9 @@
     }
 
     function startFullProductsSync() {
-      loadCatalogIndex().catch(() => {});
+      // Cached catalog is only for instant paint. Always refresh the lightweight index from Firebase
+      // in the background so stale/broken image records can never persist forever.
+      loadCatalogIndex({ forceNetwork:true }).catch(() => {});
     }
 
     function goToCatalogPage(page) {
@@ -2316,6 +2331,17 @@
 
     function switchView(viewName, param = null) {
       const role = appState.currentUser?.role;
+      // Remember exactly where the visitor came from before opening a product.
+      // This includes catalog page, active filter/search and the precise scroll position.
+      if (viewName === 'product-details' && appState.currentView !== 'product-details') {
+        appState.productReturnState = {
+          view: appState.currentView || 'products',
+          scrollY: Math.max(0, window.scrollY || document.documentElement.scrollTop || 0),
+          catalogCurrentPage: appState.catalogCurrentPage || 1,
+          selectedCategoryFilter: appState.selectedCategoryFilter || 'all',
+          productSearch: document.getElementById('product-search-input')?.value || ''
+        };
+      }
       const allowed = {
         'super-customizer': ['super_admin'],
         'admin-dashboard': ['super_admin', 'admin'],
@@ -2366,6 +2392,25 @@
       else if (viewName === 'contact-support') renderContactSupportView();
       else if (viewName === 'social') renderSocialView();
       // The staff login page has static content.
+    }
+
+    function returnFromProductDetails() {
+      const state = appState.productReturnState || { view:'products', scrollY:0, catalogCurrentPage:1, selectedCategoryFilter:'all', productSearch:'' };
+      const targetView = document.getElementById(`view-${state.view}`) ? state.view : 'products';
+
+      if (targetView === 'products') {
+        appState.catalogCurrentPage = Math.max(1, Number(state.catalogCurrentPage) || 1);
+        appState.selectedCategoryFilter = state.selectedCategoryFilter || 'all';
+        const search = document.getElementById('product-search-input');
+        if (search) search.value = state.productSearch || '';
+      }
+
+      switchView(targetView);
+      const restore = () => window.scrollTo({ top: Math.max(0, Number(state.scrollY) || 0), left:0, behavior:'auto' });
+      requestAnimationFrame(() => requestAnimationFrame(restore));
+      // The catalog renders in small rows for speed, so restore once more after the rows have joined the DOM.
+      setTimeout(restore, 180);
+      setTimeout(restore, 420);
     }
 
     function updateSidebarContent() {
@@ -2684,6 +2729,7 @@
       const raw = Array.isArray(prod?.images) ? prod.images : (prod?.images && typeof prod.images === 'object' ? Object.values(prod.images) : []);
       const images = raw.filter(image => typeof image === 'string' && image.trim()).map(image => safeImageUrl(image));
       if (!images.length && prod?.image) images.push(safeImageUrl(prod.image));
+      if (!images.length && prod?.thumbnail) images.push(safeImageUrl(prod.thumbnail));
       return images.length ? images : [PRODUCT_PLACEHOLDER];
     }
 
@@ -2874,6 +2920,51 @@
 
     window.__clovsCatalogRenderToken = window.__clovsCatalogRenderToken || 0;
 
+    function catalogImageNeedsHydration(product) {
+      const src = productMainImage(product);
+      return !src || src === PRODUCT_PLACEHOLDER || /placehold\.co\//i.test(src);
+    }
+
+    async function hydrateVisibleCatalogImages(products, renderToken) {
+      const pending = (products || []).filter(catalogImageNeedsHydration).slice(0, appState.catalogPageSize || 20);
+      if (!pending.length) return;
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < pending.length) {
+          const product = pending[cursor++];
+          if (renderToken !== window.__clovsCatalogRenderToken) return;
+          try {
+            const snap = await productsRef.child(product.id).once('value');
+            if (!snap.exists()) continue;
+            const raw = snap.val() || {};
+            const fullImages = Array.isArray(raw.images) ? raw.images : (raw.images && typeof raw.images === 'object' ? Object.values(raw.images) : []);
+            const first = fullImages.find(value => typeof value === 'string' && value.trim()) || raw.image || raw.thumbnail || '';
+            const safe = safeImageUrl(first, PRODUCT_PLACEHOLDER);
+            if (!safe || safe === PRODUCT_PLACEHOLDER) continue;
+
+            const idx = appState.products.findIndex(item => item.id === product.id);
+            if (idx >= 0) {
+              appState.products[idx] = { ...appState.products[idx], image:safe };
+            }
+            const cachedIdx = appState.cachedCatalogProducts.findIndex(item => item.id === product.id);
+            if (cachedIdx >= 0) appState.cachedCatalogProducts[cachedIdx] = { ...appState.cachedCatalogProducts[cachedIdx], image:safe };
+
+            const applyToDom = () => {
+              if (renderToken !== window.__clovsCatalogRenderToken) return;
+              document.querySelectorAll(`[data-catalog-product-image="${CSS.escape(product.id)}"]`).forEach(img => {
+                if (img.getAttribute('src') !== safe) img.setAttribute('src', safe);
+              });
+            };
+            applyToDom();
+            setTimeout(applyToDom, 120);
+          } catch (error) {
+            console.warn('[Clovs] catalog image fallback failed for', product.id, error);
+          }
+        }
+      };
+      await Promise.all([worker(), worker(), worker()]);
+    }
+
     function renderProductsCatalog() {
       const grid = document.getElementById('products-catalog-grid');
       const pillsContainer = document.getElementById('products-category-pills');
@@ -2938,7 +3029,7 @@
         return `
           <div class="product-card ${productCardClasses(prod)} bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col relative group cursor-pointer" tabindex="0" role="link" aria-label="فتح المنتج: ${escapeHtml(prod.name)}" onclick="openHomeProduct('${prod.id}')" onkeydown="if(event.target===this && (event.key==='Enter' || event.key===' ')){event.preventDefault();openHomeProduct('${prod.id}')}" >
             <div class="relative h-52 bg-slate-100 overflow-hidden">
-              <img src="${escapeHtml(productMainImage(prod))}" class="product-photo w-full h-full" loading="lazy" decoding="async" alt="${escapeHtml(prod.name)}" onerror="this.src='${PRODUCT_PLACEHOLDER}'">
+              <img data-catalog-product-image="${escapeHtml(prod.id)}" src="${escapeHtml(productMainImage(prod))}" class="product-photo w-full h-full" loading="lazy" decoding="async" alt="${escapeHtml(prod.name)}" onerror="this.src='${PRODUCT_PLACEHOLDER}'">
               ${discountBadge(prod)}
               ${productHighlightBadge(prod)}
               <button onclick="event.stopPropagation(); toggleFavorite('${prod.id}')" class="absolute top-3 left-3 w-9 h-9 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center shadow hover:scale-110 transition ${isFav ? 'text-rose-500' : 'text-slate-400 hover:text-rose-500'}"><i class="fa-${isFav ? 'solid' : 'regular'} fa-heart text-base"></i></button>
@@ -2974,6 +3065,9 @@
         }
       }
       renderNextCatalogRow();
+      // If an older catalog index lost its thumbnail, repair only the visible 20 cards on demand.
+      // This keeps the storefront fast and avoids downloading the entire heavy products tree.
+      setTimeout(() => hydrateVisibleCatalogImages(pageProducts, renderToken), 60);
     }
 
     function setCategoryFilter(cat) {
@@ -3078,7 +3172,14 @@
       </label>`).join('');
 
       container.innerHTML = `
-        <div class="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden p-6 sm:p-10">
+        <div class="space-y-4">
+          <div class="flex items-center justify-start">
+            <button type="button" onclick="returnFromProductDetails()" class="inline-flex items-center gap-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-800 font-black px-4 py-2.5 rounded-xl shadow-sm transition" aria-label="الرجوع لنفس المكان السابق">
+              <i class="fa-solid fa-arrow-right"></i>
+              رجوع
+            </button>
+          </div>
+          <div class="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden p-6 sm:p-10">
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
             <div class="min-w-0">
               <div class="relative rounded-3xl overflow-hidden bg-slate-100 h-80 sm:h-96 shadow-inner">
@@ -3132,8 +3233,8 @@
                   <i class="fa-${isFav ? 'solid' : 'regular'} fa-heart"></i>
                   <span>${isFav ? 'في المفضلة' : 'حفظ بالمفضلة'}</span>
                 </button>
-                <button onclick="switchView('products')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-6 py-4 rounded-2xl transition text-sm">
-                  الرجوع
+                <button onclick="returnFromProductDetails()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-6 py-4 rounded-2xl transition text-sm">
+                  الرجوع لنفس المكان
                 </button>
               </div>
             </div>
@@ -3157,6 +3258,7 @@
                 </div>`).join('')}
             </div>
           </section>` : ''}
+        </div>
       `;
     }
 
@@ -5799,7 +5901,9 @@
       startSmoothBootProgress();
 
       try {
-        const catalogCache = JSON.parse(localStorage.getItem('clovs_catalog_index_v2') || 'null');
+        // v2 may contain placeholder-only images from an older build. Never reuse it.
+        localStorage.removeItem('clovs_catalog_index_v2');
+        const catalogCache = JSON.parse(localStorage.getItem('clovs_catalog_index_v3') || 'null');
         if (catalogCache && Array.isArray(catalogCache.products) && catalogCache.products.length) {
           const records = catalogCache.products.map(p => ({ ...p, _catalogOnly:true }));
           appState.cachedCatalogProducts = records.slice();
