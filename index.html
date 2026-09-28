@@ -1202,12 +1202,11 @@
       const orderKey = String(data?.orderKey || '');
       if (!/^[A-Za-z0-9_-]{1,128}$/.test(orderKey)) throw new Error('رقم الطلب غير صالح');
       const orderRef = ordersRef.child(orderKey);
-      const already = await orderRef.once('value');
-      if (already.exists()) {
-        const old = already.val();
-        if (old?.marketerUid !== uid) throw new Error('رقم الطلب مستخدم بالفعل');
-        return { data:{ success:true, idempotent:true, orderKey, totalCommission:Number(old.totalCommission)||0, grandTotal:Number(old.grandTotal)||0 } };
-      }
+      // Do not read a brand-new order node before writing it. The marketer read rule
+      // intentionally allows reading only their existing orders, so a pre-read of an
+      // unused push key returns permission_denied. Push IDs are unique; write first,
+      // then verify the saved node. If a previous attempt actually committed, the
+      // catch path below reads the now-existing order and treats it as idempotent.
 
       const rawItems = Array.isArray(data?.items) ? data.items : [];
       if (!rawItems.length || rawItems.length > 30) throw new Error('عدد منتجات الطلب غير صالح');
@@ -1296,10 +1295,27 @@
         status:'pending'
       };
 
-      const tx = await orderRef.transaction(current => current || order, undefined, false);
-      const saved = tx.snapshot.val();
-      if (!saved || saved.marketerUid !== uid) throw new Error('تعذر تثبيت الطلب في Firebase');
-      return { data:{ success:true, idempotent:!tx.committed, orderKey, totalCommission:Number(saved.totalCommission)||0, grandTotal:Number(saved.grandTotal)||0 } };
+      let saved = null;
+      try {
+        await orderRef.set(order);
+        const verifySnap = await readFirebaseValueWithRetry(orderRef, 4, 180);
+        saved = verifySnap.val();
+        if (!verifySnap.exists() || saved?.marketerUid !== uid || saved?.id !== `ORD-${orderKey}` || saved?.status !== 'pending') {
+          throw new Error('تعذر التحقق من تثبيت الطلب في Firebase');
+        }
+        return { data:{ success:true, idempotent:false, orderKey, totalCommission:Number(saved.totalCommission)||0, grandTotal:Number(saved.grandTotal)||0 } };
+      } catch (writeError) {
+        // If the network failed after Firebase committed the write, the same push key
+        // may already exist. Reading an existing order owned by this marketer is allowed.
+        try {
+          const existingSnap = await readFirebaseValueWithRetry(orderRef, 2, 120);
+          const existing = existingSnap.val();
+          if (existingSnap.exists() && existing?.marketerUid === uid && existing?.id === `ORD-${orderKey}`) {
+            return { data:{ success:true, idempotent:true, orderKey, totalCommission:Number(existing.totalCommission)||0, grandTotal:Number(existing.grandTotal)||0 } };
+          }
+        } catch (_) {}
+        throw writeError;
+      }
     }
 
     async function directRequestWithdrawal(data) {
@@ -1316,11 +1332,7 @@
       if (!/^[A-Za-z0-9_-]{1,128}$/.test(requestKey) || !Number.isFinite(amount) || amount < 50 || amount > Number(profile.balance || 0)) throw new Error('الرصيد المتاح للسحب غير كافٍ');
       if (!['محفظة إلكترونية','إنستاباي (InstaPay)','تحويل بنكي'].includes(method) || !details || details.length > 160) throw new Error('بيانات وسيلة السحب غير صالحة');
       const ref = withdrawRequestsRef.child(requestKey);
-      const existing = await ref.once('value');
-      if (existing.exists()) {
-        if (existing.val()?.marketerUid !== uid) throw new Error('رقم طلب السحب مستخدم');
-        return { data:{success:true,idempotent:true,requestKey} };
-      }
+      // Same rule as orders: don't pre-read a key that does not exist yet.
       const request = {
         id:`WDR-${requestKey}`,
         marketerUid:uid,
@@ -1328,8 +1340,24 @@
         userName:String(profile.name || 'مسوق').slice(0,100),
         amount, method, details, status:'pending', createdAt:Date.now()
       };
-      await setAndVerifyFirebase(ref, request, saved => saved?.marketerUid === uid && saved?.status === 'pending' && Number(saved?.amount) === amount, 'طلب السحب');
-      return { data:{success:true,requestKey} };
+      try {
+        await ref.set(request);
+        const verifySnap = await readFirebaseValueWithRetry(ref, 3, 160);
+        const saved = verifySnap.val();
+        if (!verifySnap.exists() || saved?.marketerUid !== uid || saved?.status !== 'pending' || Number(saved?.amount) !== amount) {
+          throw new Error('فشل التحقق من حفظ طلب السحب');
+        }
+        return { data:{success:true,idempotent:false,requestKey} };
+      } catch (writeError) {
+        try {
+          const existingSnap = await readFirebaseValueWithRetry(ref, 2, 120);
+          const existing = existingSnap.val();
+          if (existingSnap.exists() && existing?.marketerUid === uid && existing?.id === `WDR-${requestKey}`) {
+            return { data:{success:true,idempotent:true,requestKey} };
+          }
+        } catch (_) {}
+        throw writeError;
+      }
     }
 
     async function directSetOrderStatus(data) {
