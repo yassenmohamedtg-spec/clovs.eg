@@ -34,7 +34,6 @@
   <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-database-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
 
   <script>
     const defaultPrimaryColor = '#059669';
@@ -986,8 +985,13 @@
     }
 
     const firebaseDB = firebase.database();
-    const secureFunctions = firebase.app().functions('us-central1');
-    const secureCall = (name, data) => secureFunctions.httpsCallable(name)(data);
+    // Temporary free mode: use Realtime Database + Security Rules directly until Cloud Functions can be deployed.
+    // Flip this to false after the Functions backend is successfully deployed.
+    const CLOVS_DIRECT_RTD_MODE = true;
+    const secureCall = async (name, data) => {
+      if (CLOVS_DIRECT_RTD_MODE) return directSecureCall(name, data);
+      return firebase.app().functions('us-central1').httpsCallable(name)(data);
+    };
     const firebaseAuth = firebase.auth();
     const FIREBASE_ADMIN_UID = 'zAeUYXEN3jS18kBC3QXZOVcedk12';
     const CLOUDINARY_CLOUD_NAME = 'ogrhqv8z';
@@ -1158,6 +1162,273 @@
     const marketerUsernamesRef = firebaseDB.ref('marketerUsernames');
     const ordersRef = firebaseDB.ref('orders');
     const withdrawRequestsRef = firebaseDB.ref('withdrawRequests');
+
+
+    function roundMoneyValue(value) {
+      return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+    }
+
+    function directAdminAllowed() {
+      return !!firebaseAuth.currentUser && ['admin', 'super_admin'].includes(appState.currentUser?.role);
+    }
+
+    function validateDirectVariants(product, selectedVariants) {
+      const selected = selectedVariants && typeof selectedVariants === 'object' && !Array.isArray(selectedVariants)
+        ? { ...selectedVariants } : {};
+      const variants = Array.isArray(product?.variants) ? product.variants : [];
+      const expected = new Set();
+      for (const variant of variants) {
+        const name = String(variant?.name || '').trim();
+        const options = Array.isArray(variant?.options) ? variant.options.map(String) : [];
+        if (!name || !options.length) continue;
+        expected.add(name);
+        const value = String(selected[name] ?? '');
+        if (!options.includes(value)) throw new Error(`اختيار ${name} غير صالح`);
+      }
+      for (const key of Object.keys(selected)) {
+        if (!expected.has(key)) throw new Error('يوجد اختيار منتج غير معروف');
+      }
+      return selected;
+    }
+
+    async function directCreateOrder(data) {
+      const authUser = firebaseAuth.currentUser;
+      if (!authUser || !appState.currentUser?.firebaseMarketer) throw new Error('يجب تسجيل الدخول كمسوق');
+      const uid = authUser.uid;
+      const profileSnap = await marketerProfilesRef.child(uid).once('value');
+      const profile = profileSnap.val();
+      if (!profile || profile.role !== 'marketer' || profile.status !== 'approved') throw new Error('حساب المسوق غير متاح أو موقوف');
+
+      const orderKey = String(data?.orderKey || '');
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(orderKey)) throw new Error('رقم الطلب غير صالح');
+      const orderRef = ordersRef.child(orderKey);
+      const already = await orderRef.once('value');
+      if (already.exists()) {
+        const old = already.val();
+        if (old?.marketerUid !== uid) throw new Error('رقم الطلب مستخدم بالفعل');
+        return { data:{ success:true, idempotent:true, orderKey, totalCommission:Number(old.totalCommission)||0, grandTotal:Number(old.grandTotal)||0 } };
+      }
+
+      const rawItems = Array.isArray(data?.items) ? data.items : [];
+      if (!rawItems.length || rawItems.length > 30) throw new Error('عدد منتجات الطلب غير صالح');
+      const customer = data?.customer || {};
+      const customerName = String(customer.name || '').trim();
+      const phone = String(customer.phone || '').trim();
+      const address = String(customer.address || '').trim();
+      const governorate = String(customer.governorate || '').trim();
+      if (!customerName || customerName.length > 100 || !/^01[0-9]{9}$/.test(phone) || !address || address.length > 300 || !GOVERNORATES.includes(governorate)) {
+        throw new Error('بيانات العميل غير صالحة');
+      }
+      const paymentMethod = String(data?.paymentMethod || '');
+      if (!['cod','online'].includes(paymentMethod)) throw new Error('طريقة الدفع غير صالحة');
+      const proof = data?.paymentProof && typeof data.paymentProof === 'object' ? data.paymentProof : {};
+      const screenshot = String(proof.screenshot || '');
+      const senderPhone = String(proof.senderPhone || '').trim().slice(0,30);
+      if (paymentMethod === 'online' && (!/^data:image\/(?:jpeg|jpg|png|webp);base64,/i.test(screenshot) || screenshot.length > 600000)) {
+        throw new Error('إيصال التحويل غير صالح أو حجمه كبير');
+      }
+
+      const productIds = [...new Set(rawItems.map(item => String(item?.productId || '')))];
+      if (productIds.some(id => !/^[A-Za-z0-9_-]{1,128}$/.test(id))) throw new Error('معرّف منتج غير صالح');
+      const snaps = await Promise.all(productIds.map(id => productsRef.child(id).once('value')));
+      const products = new Map();
+      snaps.forEach((snap, index) => { if (snap.exists()) products.set(productIds[index], snap.val()); });
+      if (products.size !== productIds.length) throw new Error('أحد المنتجات لم يعد متاحاً');
+
+      const requestedByProduct = new Map();
+      let subtotal = 0;
+      let totalCommission = 0;
+      const items = [];
+      for (const raw of rawItems) {
+        const productId = String(raw.productId || '');
+        const product = products.get(productId);
+        const quantity = Number(raw.quantity);
+        const commission = roundMoneyValue(raw.commission);
+        if (!Number.isInteger(quantity) || quantity < 1 || quantity > 100 || !Number.isFinite(commission) || commission < 0 || commission > 1000000) {
+          throw new Error('كمية أو عمولة غير صالحة');
+        }
+        const requested = (requestedByProduct.get(productId) || 0) + quantity;
+        requestedByProduct.set(productId, requested);
+        const stock = Number(product?.stock ?? 0);
+        if (!Number.isFinite(stock) || stock < requested) throw new Error(`المخزون غير كافٍ للمنتج: ${String(product?.name || productId).slice(0,80)}`);
+        const selectedVariants = validateDirectVariants(product, raw.selectedVariants);
+        const price = getProductPrice(product);
+        if (!(price > 0)) throw new Error('سعر أحد المنتجات غير صالح');
+        subtotal += (price + commission) * quantity;
+        totalCommission += commission * quantity;
+        const rawImage = String(product.image || (Array.isArray(product.images) ? product.images[0] : '') || '');
+        items.push({
+          product:{
+            id:productId,
+            name:String(product.name || 'منتج').slice(0,200),
+            price:Number(product.price),
+            discountPercent:Number(product.discountPercent)||0,
+            image:/^https:\/\//i.test(rawImage) ? rawImage.slice(0,1500) : ''
+          },
+          quantity,
+          commission,
+          selectedVariants
+        });
+      }
+      subtotal = roundMoneyValue(subtotal);
+      totalCommission = roundMoneyValue(totalCommission);
+      const shippingSnap = await shippingRatesRef.child(governorate).once('value').catch(() => null);
+      let shippingRate = Number(shippingSnap?.val());
+      if (!Number.isFinite(shippingRate) || shippingRate < 0 || shippingRate > 100000) shippingRate = Number(appState.shippingRates[governorate] ?? DEFAULT_SHIPPING[governorate] ?? 50);
+      shippingRate = roundMoneyValue(shippingRate);
+      const now = Date.now();
+      const order = {
+        id:`ORD-${orderKey}`,
+        marketerUid:uid,
+        marketerId:`firebase-marketer-${uid}`,
+        marketerName:String(profile.name || 'مسوق').slice(0,100),
+        createdAt:now,
+        date:new Date(now).toLocaleDateString('ar-EG', { timeZone:'Africa/Cairo' }),
+        items,
+        customer:{ name:customerName, phone, address, governorate },
+        shippingRate,
+        subtotal,
+        totalCommission,
+        grandTotal:roundMoneyValue(subtotal + shippingRate),
+        paymentMethod,
+        paymentProof:paymentMethod === 'online' ? { screenshot, senderPhone } : { screenshot:'', senderPhone:'' },
+        commissionCredited:false,
+        status:'pending'
+      };
+
+      const tx = await orderRef.transaction(current => current || order, undefined, false);
+      const saved = tx.snapshot.val();
+      if (!saved || saved.marketerUid !== uid) throw new Error('تعذر تثبيت الطلب في Firebase');
+      return { data:{ success:true, idempotent:!tx.committed, orderKey, totalCommission:Number(saved.totalCommission)||0, grandTotal:Number(saved.grandTotal)||0 } };
+    }
+
+    async function directRequestWithdrawal(data) {
+      const authUser = firebaseAuth.currentUser;
+      if (!authUser || !appState.currentUser?.firebaseMarketer) throw new Error('يجب تسجيل الدخول كمسوق');
+      const uid = authUser.uid;
+      const profileSnap = await marketerProfilesRef.child(uid).once('value');
+      const profile = profileSnap.val();
+      if (!profile || profile.role !== 'marketer' || profile.status !== 'approved') throw new Error('حساب المسوق غير متاح');
+      const requestKey = String(data?.requestKey || '');
+      const amount = roundMoneyValue(data?.amount);
+      const method = String(data?.method || '');
+      const details = String(data?.details || '').trim();
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(requestKey) || !Number.isFinite(amount) || amount < 50 || amount > Number(profile.balance || 0)) throw new Error('الرصيد المتاح للسحب غير كافٍ');
+      if (!['محفظة إلكترونية','إنستاباي (InstaPay)','تحويل بنكي'].includes(method) || !details || details.length > 160) throw new Error('بيانات وسيلة السحب غير صالحة');
+      const ref = withdrawRequestsRef.child(requestKey);
+      const existing = await ref.once('value');
+      if (existing.exists()) {
+        if (existing.val()?.marketerUid !== uid) throw new Error('رقم طلب السحب مستخدم');
+        return { data:{success:true,idempotent:true,requestKey} };
+      }
+      const request = {
+        id:`WDR-${requestKey}`,
+        marketerUid:uid,
+        userId:`firebase-marketer-${uid}`,
+        userName:String(profile.name || 'مسوق').slice(0,100),
+        amount, method, details, status:'pending', createdAt:Date.now()
+      };
+      await setAndVerifyFirebase(ref, request, saved => saved?.marketerUid === uid && saved?.status === 'pending' && Number(saved?.amount) === amount, 'طلب السحب');
+      return { data:{success:true,requestKey} };
+    }
+
+    async function directSetOrderStatus(data) {
+      if (!directAdminAllowed()) throw new Error('ليس لديك صلاحية');
+      const orderKey = String(data?.orderKey || '');
+      const status = String(data?.status || '');
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(orderKey) || !['pending','confirmed','shipping','delivered','cancelled','returned'].includes(status)) throw new Error('بيانات الحالة غير صالحة');
+      const orderRef = ordersRef.child(orderKey);
+      const orderSnap = await orderRef.once('value');
+      const order = orderSnap.val();
+      if (!order) throw new Error('الأوردر غير موجود');
+      const uid = String(order.marketerUid || '');
+      const amount = roundMoneyValue(order.totalCommission);
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(uid) || !Number.isFinite(amount) || amount < 0) throw new Error('بيانات عمولة الأوردر غير صالحة');
+
+      const profileRef = marketerProfilesRef.child(uid);
+      let changedBalance = false;
+      let previousProfile = null;
+      const tx = await profileRef.transaction(current => {
+        if (!current) return;
+        previousProfile = JSON.parse(JSON.stringify(current));
+        current._finance = current._finance || {};
+        current._finance.orderCredits = current._finance.orderCredits || {};
+        const credits = current._finance.orderCredits;
+        const marker = Number(credits[orderKey]) || 0;
+        let balance = Number(current.balance) || 0;
+        if (status === 'delivered' && !marker) {
+          balance = roundMoneyValue(balance + amount);
+          credits[orderKey] = amount || 0.000001;
+          changedBalance = true;
+        } else if (status !== 'delivered' && marker) {
+          balance = roundMoneyValue(balance - (marker === 0.000001 ? 0 : marker));
+          delete credits[orderKey];
+          changedBalance = true;
+        }
+        current.balance = balance;
+        return current;
+      }, undefined, false);
+      if (!tx.snapshot.exists()) throw new Error('ملف المسوق غير موجود');
+      try {
+        await updateAndVerifyFirebase(orderRef, { status, commissionCredited:status === 'delivered', updatedAt:Date.now() }, saved => saved?.status === status && saved?.commissionCredited === (status === 'delivered'), 'حالة الأوردر');
+      } catch (error) {
+        // Best-effort rollback if the profile transaction changed money but the order write failed.
+        if (changedBalance && previousProfile) await profileRef.set(previousProfile).catch(() => {});
+        throw error;
+      }
+      return { data:{success:true,orderKey,status,balance:Number(tx.snapshot.val()?.balance)||0} };
+    }
+
+    async function directMarkWithdrawalPaid(data) {
+      if (!directAdminAllowed()) throw new Error('ليس لديك صلاحية');
+      const requestKey = String(data?.requestKey || '');
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(requestKey)) throw new Error('رقم طلب السحب غير صالح');
+      const requestRef = withdrawRequestsRef.child(requestKey);
+      const requestSnap = await requestRef.once('value');
+      const request = requestSnap.val();
+      if (!request) throw new Error('طلب السحب غير موجود');
+      if (request.status === 'paid') return { data:{success:true,idempotent:true,requestKey} };
+      if (request.status !== 'pending') throw new Error('طلب السحب ليس قيد المراجعة');
+      const uid = String(request.marketerUid || '');
+      const amount = roundMoneyValue(request.amount);
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(uid) || !Number.isFinite(amount) || amount < 0) throw new Error('بيانات طلب السحب غير صالحة');
+      const profileRef = marketerProfilesRef.child(uid);
+      let previousProfile = null;
+      let deducted = false;
+      const tx = await profileRef.transaction(current => {
+        if (!current) return;
+        previousProfile = JSON.parse(JSON.stringify(current));
+        current._finance = current._finance || {};
+        current._finance.withdrawalPaidById = current._finance.withdrawalPaidById || {};
+        if (current._finance.withdrawalPaidById[requestKey]) return current;
+        const balance = Number(current.balance) || 0;
+        if (balance + 1e-9 < amount) return;
+        current.balance = roundMoneyValue(balance - amount);
+        current._finance.withdrawalPaidById[requestKey] = { amount, paidAt:Date.now() };
+        deducted = true;
+        return current;
+      }, undefined, false);
+      const profile = tx.snapshot.val();
+      if (!profile || !profile?._finance?.withdrawalPaidById?.[requestKey]) throw new Error('الرصيد غير كافٍ أو تعذر تثبيت الصرف');
+      try {
+        await updateAndVerifyFirebase(requestRef, { status:'paid', paidAt:Date.now() }, saved => saved?.status === 'paid', 'صرف طلب السحب');
+      } catch (error) {
+        if (deducted && previousProfile) await profileRef.set(previousProfile).catch(() => {});
+        throw error;
+      }
+      return { data:{success:true,requestKey,balance:Number(profile.balance)||0} };
+    }
+
+    async function directSecureCall(name, data) {
+      switch (name) {
+        case 'secureCreateOrder': return directCreateOrder(data);
+        case 'secureRequestWithdrawal': return directRequestWithdrawal(data);
+        case 'secureSetOrderStatus': return directSetOrderStatus(data);
+        case 'secureMarkWithdrawalPaid': return directMarkWithdrawalPaid(data);
+        case 'secureChangeMarketerPassword': throw new Error('password-reset-email-only');
+        default: throw new Error(`عملية غير مدعومة في الوضع المجاني: ${name}`);
+      }
+    }
 
     async function readFirebaseValueWithRetry(ref, attempts = 3, delayMs = 180) {
       let lastError = null;
@@ -3637,7 +3908,7 @@
         const code = String(error?.code || '');
         const message = String(error?.message || '');
         if (message.includes('cart-product-changed')) showToast('منتج في السلة غير متاح أو كميته تغيرت. راجع السلة وأعد المحاولة.', 'error');
-        else if (code.includes('functions/not-found') || code.includes('functions/unimplemented')) showToast('خدمة إنشاء الأوردر غير منشورة على Firebase Functions. ارفع Backend CLOVS المرفق.', 'error');
+        else if (!CLOVS_DIRECT_RTD_MODE && (code.includes('functions/not-found') || code.includes('functions/unimplemented'))) showToast('خدمة إنشاء الأوردر غير منشورة على Firebase Functions.', 'error');
         else showToast(`تعذر إنشاء الأوردر أو التحقق من حفظه: ${message.slice(0,100) || 'خطأ في الخدمة'}`, 'error');
       } finally {
         orderSubmissionInProgress = false;
@@ -4776,7 +5047,7 @@
           <div class="bg-white p-6 rounded-3xl border border-slate-100 space-y-4">
             <div>
               <h3 class="font-black text-slate-900 text-lg">إدارة كلمات مرور المسوقين</h3>
-              <p class="text-slate-500 text-xs mt-1">تغيير كلمة المرور يتم بأمان من خلال Firebase Cloud Function ولا يتم حفظ كلمة المرور داخل قاعدة البيانات.</p>
+              <p class="text-slate-500 text-xs mt-1">في الوضع المجاني الحالي يتم تغيير كلمة المرور بأمان عن طريق رابط إعادة تعيين يُرسل لبريد المسوق.</p>
             </div>
             <div class="overflow-x-auto">
               <table class="w-full text-right">
@@ -4795,6 +5066,16 @@
       const marketer = appState.usersList.find(user => user.uid === uid && user.firebaseMarketer);
       openModal(`تغيير كلمة مرور ${name}`, '');
       const content = document.getElementById('modal-message');
+      if (CLOVS_DIRECT_RTD_MODE) {
+        content.innerHTML = `<div class="space-y-3 text-right">
+          <p class="text-sm font-bold text-slate-800">الوضع المجاني مفعّل حالياً.</p>
+          <p class="text-[12px] leading-6 text-slate-500">Firebase لا يسمح للمدير بتغيير كلمة مرور مستخدم آخر من ملف HTML فقط. البديل الآمن والمجاني هو إرسال رابط إعادة تعيين إلى بريد المسوق، ومن خلاله يضع كلمة مرور جديدة بنفسه.</p>
+          ${marketer?.email ? `<p class="text-[12px] font-bold text-brand-700" dir="ltr">${escapeHtml(marketer.email)}</p>` : '<p class="text-xs text-rose-600">لا يوجد بريد إلكتروني محفوظ لهذا المسوق.</p>'}
+        </div>`;
+        const actions = document.getElementById('modal-actions');
+        actions.innerHTML = `${marketer?.email ? `<button onclick="sendMarketerPasswordReset('${uid}')" class="bg-brand-600 hover:bg-brand-700 text-white font-bold px-5 py-2.5 rounded-xl text-sm">إرسال رابط تغيير كلمة المرور</button>` : ''}<button onclick="closeModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-5 py-2.5 rounded-xl text-sm">إلغاء</button>`;
+        return;
+      }
       content.innerHTML = `<div class="space-y-3 text-right">
         <label class="block text-xs font-bold">كلمة المرور الجديدة</label>
         <input id="admin-new-marketer-password" type="password" minlength="8" autocomplete="new-password" placeholder="8 أحرف على الأقل" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm" dir="ltr">
@@ -4823,7 +5104,7 @@
         console.error('[Clovs Firebase] password change failed:', error);
         const code = String(error?.code || '');
         if (code.includes('functions/not-found') || code.includes('functions/unimplemented')) {
-          showToast('Cloud Function الخاصة بتغيير كلمة المرور غير منشورة. ارفع Backend CLOVS المرفق.', 'error');
+          showToast('التغيير المباشر لكلمة المرور يحتاج Backend. استخدم زر إرسال رابط إعادة التعيين.', 'error');
         } else {
           showToast(`تعذر تغيير كلمة المرور: ${String(error?.message || error).slice(0,110)}`, 'error');
         }
@@ -5531,7 +5812,7 @@
             <option value="approved" ${user.status === 'approved' ? 'selected' : ''}>نشط</option>
             <option value="suspended" ${user.status === 'suspended' ? 'selected' : ''}>موقوف</option>
           </select></label>
-          <p class="text-xs text-slate-500">اسم الدخول وكلمة المرور من Firebase Authentication. تسوية الأرصدة المالية تتطلب خدمة خادم موثوقة.</p>
+          <p class="text-xs text-slate-500">اسم الدخول وكلمة المرور من Firebase Authentication. في الوضع المجاني يتم تغيير كلمة المرور عبر رابط إعادة تعيين بالبريد، بينما الأرصدة والأوردرات تعمل مباشرة بقواعد Firebase المؤمّنة.</p>
         </div>`;
       openModal(`تعديل بيانات ${escapeHtml(user.name)}`, '', 'fa-user-gear',
         `<button onclick="saveFirebaseMarketerEdit('${user.uid}')" class="bg-brand-600 text-white font-bold px-6 py-2 rounded-xl">حفظ في Firebase</button><button onclick="closeModal()" class="bg-slate-100 px-6 py-2 rounded-xl">إلغاء</button>`);
