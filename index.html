@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="clovs-build" content="2026-10-01-v12-audience-accounts-ai-quick">
+  <meta name="clovs-build" content="2026-10-04-v17-cart-order-storage-fix">
   <title id="html-page-title">Clovs | كلوفز للمنتجات والتسوق وخدمات المسوقين في مصر</title>
   <meta name="description" content="Clovs كلوفز متجر ومنصة خدمات في مصر: تصفح المنتجات والأسعار والعروض، مع أدوات مخصصة للمسوقين بعد تسجيل الدخول بحساب مسوق.">
   <meta name="robots" content="index,follow,max-image-preview:large">
@@ -34,6 +34,7 @@
   <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
 
   <script>
     const defaultPrimaryColor = '#059669';
@@ -4021,6 +4022,7 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
         });
       }
 
+      clovsPersistActiveCart();
       updateCartBadge();
       showToast(marketerMode ? `تمت إضافة "${prod.name}" بعمولة ${commission} ج.م إلى الأوردر الجديد!` : `تمت إضافة "${prod.name}" إلى السلة`);
       switchView(marketerMode ? 'marketer-order' : 'cart');
@@ -4206,24 +4208,29 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
       if (item.quantity <= 0) {
         appState.activeCart.items.splice(index, 1);
       }
+      clovsPersistActiveCart();
       updateCartBadge();
       renderCartView();
     }
 
     function removeCartItem(index) {
       appState.activeCart.items.splice(index, 1);
+      clovsPersistActiveCart();
       updateCartBadge();
       renderCartView();
     }
 
     function clearCart() {
       appState.activeCart.items = [];
+      pendingCheckoutKey = null;
+      clovsPersistActiveCart();
       updateCartBadge();
       renderCartView();
     }
 
     function onCartGovChange(gov) {
       appState.activeCart.customer.governorate = gov;
+      clovsPersistActiveCart();
       renderCartView();
     }
 
@@ -4231,6 +4238,7 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
       if (!['cod', 'online'].includes(method)) return;
       appState.activeCart.paymentMethod = method;
       if (method === 'cod') appState.activeCart.paymentProof = { screenshot: '', senderPhone: '' };
+      clovsPersistActiveCart();
       renderCartView();
     }
 
@@ -4245,6 +4253,7 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
       try {
         showToast('جاري تجهيز إيصال التحويل...', 'info');
         appState.activeCart.paymentProof.screenshot = await optimizeProductImage(file);
+        clovsPersistActiveCart();
         showToast('تم إرفاق إيصال التحويل بنجاح');
       } catch (error) {
         console.error('[Clovs] payment proof optimization failed:', error);
@@ -4318,9 +4327,11 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
           item.commission = 0;
         }
 
-        const orderKey = pendingCheckoutKey || ordersRef.push().key;
+        const orderKey = pendingCheckoutKey || appState.activeCart.orderKey || ordersRef.push().key;
         if (!orderKey) throw new Error('order-key-failed');
         pendingCheckoutKey = orderKey;
+        appState.activeCart.orderKey = orderKey;
+        clovsPersistActiveCart();
         const shippingRate = roundMoneyValue(Number(appState.shippingRates[c.governorate] ?? DEFAULT_SHIPPING[c.governorate] ?? 50));
         const subtotal = roundMoneyValue(appState.activeCart.items.reduce((sum,item)=>sum + getProductPrice(item.product) * Number(item.quantity),0));
         const createdAt = Date.now();
@@ -4352,16 +4363,19 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
           customer:previewOrder.customer,
           paymentMethod:appState.activeCart.paymentMethod,
           paymentProof:{...appState.activeCart.paymentProof},
-          shippingLabelData:labelCanvas.toDataURL('image/png')
+          shippingLabelData:labelCanvas.toDataURL('image/png'),
+          expectedGrandTotal:previewOrder.grandTotal
         },180000);
         if (!result?.success) throw new Error(result?.message || 'تعذر تثبيت الطلب');
 
         clovsService('notifyOrder',{orderKey},45000).catch(()=>{});
         pendingCheckoutKey = null;
+        appState.activeCart.orderKey = null;
         appState.activeCart.items = [];
         appState.activeCart.customer = { name:String(appState.currentUser?.name||''), phone:String(appState.currentUser?.phone||''), address:'', governorate:'القاهرة' };
         appState.activeCart.paymentProof = { screenshot:'', senderPhone:'' };
         appState.activeCart.paymentMethod = 'cod';
+        clovsPersistActiveCart();
         updateCartBadge();
         openModal('تم تأكيد طلبك بنجاح', `رقم طلبك: ORD-${orderKey} — الإجمالي ${money(Number(result.grandTotal ?? previewOrder.grandTotal))} ج.م. تم إرسال الطلب للإدارة للمراجعة والتجهيز.`);
         switchView('home');
@@ -4431,9 +4445,11 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
           item.product = current;
         }
 
-        const orderKey = pendingCheckoutKey || ordersRef.push().key;
+        const orderKey = pendingCheckoutKey || appState.activeCart.orderKey || ordersRef.push().key;
         if (!orderKey) throw new Error('order-key-failed');
         pendingCheckoutKey = orderKey; // idempotent retry uses the same key.
+        appState.activeCart.orderKey = orderKey;
+        clovsPersistActiveCart();
         const payloadItems = appState.activeCart.items.map(item => ({
           productId:item.product.id,
           quantity:Number(item.quantity),
@@ -4462,9 +4478,11 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
           clovsService('notifyOrder',{orderKey},45000).catch(()=>{});
         }
         pendingCheckoutKey = null;
+        appState.activeCart.orderKey = null;
         appState.activeCart.items = [];
         appState.activeCart.customer = { name: '', phone: '', address: '', governorate: 'القاهرة' };
         appState.activeCart.paymentProof = { screenshot: '', senderPhone: '' };
+        clovsPersistActiveCart();
         updateCartBadge();
         const commission = Number(savedOrder.totalCommission ?? result.data.totalCommission ?? 0);
         openModal('تم تأكيد الأوردر بنجاح!', `تم حفظ أوردر رقم (${savedOrder.id || 'ORD-' + orderKey}) في Firebase وإرساله للمراجعة. ستُضاف عمولتك (${money(commission)} ج.م) عند التسليم.`);
@@ -6783,7 +6801,7 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
     }
 
     // ================= CLOVS v11: marketer identity, marketing studio and service bridge =================
-    const clovsV11 = { config:{}, publicProfiles:{}, studio:{product:null,price:'',pageName:'',hook:'',description:'',source:'',images:[],batchId:'',busy:false}, catalog:[], catalogLoaded:false, profileBusy:false, aiUsage:{plan:'beginner',planName:'المبتدئ',limit:5,used:0,remaining:5,day:'',loaded:false}, aiUsageBusy:false, };
+    const clovsV11 = { config:{}, publicProfiles:{}, studio:{product:null,price:'',pageName:'',hook:'',description:'',source:'',images:[],batchId:'',busy:false}, catalog:[], catalogLoaded:false, profileBusy:false, aiUsage:{plan:'beginner',planName:'المبتدئ',limit:8,used:0,remaining:8,day:'',loaded:false}, aiUsageBusy:false, };
     const CLOVS_BADGES = [
       {n:1,name:'أول خطوة',icon:'seedling',tone:'emerald'}, {n:5,name:'انطلاقة قوية',icon:'bolt',tone:'blue'},
       {n:10,name:'صانع الفرص',icon:'bullseye',tone:'violet'}, {n:50,name:'نجم المبيعات',icon:'star',tone:'amber'},
@@ -6792,7 +6810,7 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
     ];
     const CLOVS_TENURE = [{days:0,name:'مسوق مبتدئ',icon:'seedling'},{days:7,name:'مسوق جاهز',icon:'compass'},{days:30,name:'عضو ثابت',icon:'shield-halved'},{days:90,name:'شريك الرحلة',icon:'handshake'},{days:180,name:'من أهل CLOVS',icon:'gem'},{days:365,name:'سفير CLOVS',icon:'crown'}];
     const CLOVS_PLANS = {
-      beginner:{key:'beginner',name:'المبتدئ',limit:5,minDelivered:0,icon:'seedling',className:'',tag:'متاحة من أول يوم',condition:'بدون شروط'},
+      beginner:{key:'beginner',name:'المبتدئ',limit:8,minDelivered:0,icon:'seedling',className:'',tag:'متاحة من أول يوم',condition:'بدون شروط'},
       intermediate:{key:'intermediate',name:'المتوسط',limit:20,minDelivered:60,icon:'chart-line',className:'',tag:'مرحلة النمو',condition:'تسليم 60 أوردر'},
       pro:{key:'pro',name:'المحترف',limit:60,minDelivered:250,icon:'crown',className:'plan-pro',tag:'أعلى مستوى',condition:'تسليم 250 أوردر'}
     };
@@ -6881,10 +6899,10 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
       finally{clovsV11.profileBusy=false;if(appState.currentView==='marketer-profile')renderMarketerProfile();updateHeaderAuthUI();}
     }
     async function clovsService(action,data={},timeout=180000) {
-      const endpoint=String(clovsV11.config.serviceUrl||'');if(!/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(endpoint))throw new Error('خدمة التوليد والربط تحتاج تفعيل الإدارة');
-      const actor=firebaseAuth.currentUser;if(!actor)throw new Error('سجّل الدخول أولاً');
-      const idToken=await actor.getIdToken();const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),timeout);
-      try{const response=await fetch(endpoint,{method:'POST',body:new URLSearchParams({payload:JSON.stringify({action,data,idToken})}),signal:controller.signal,redirect:'follow',credentials:'omit'});const result=await response.json();if(firebaseAuth.currentUser?.uid!==actor.uid)throw new Error('جلسة الحساب تغيرت');if(!result.success){let message=result.message||'تعذر تنفيذ الطلب';if(message==='طلب غير معروف'&&['saveStore','saveStoreProduct'].includes(action))message='خدمة المتجر المنشورة قديمة أو رابطها غير صحيح. انشر كود CLOVS v17 كنسخة جديدة في Apps Script، ثم تأكد أن رابط /exec في إعدادات الموقع هو رابط هذا النشر.';throw new Error(message);}return result;}catch(error){if(error.name==='AbortError')throw new Error('انتهت مهلة الخدمة. أعد المحاولة لاستكمال الطلب.');throw error;}finally{clearTimeout(timer);}
+      const endpoint=String(clovsV11.config.serviceUrl||'');if(!/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(endpoint))throw new Error('خدمة CLOVS غير مربوطة. افتح إعدادات الربط واحفظ رابط Apps Script /exec الصحيح.');
+      const actor=firebaseAuth.currentUser,publicStoreOrder=action==='storeOrder'&&!actor;if(!actor&&!publicStoreOrder)throw new Error('سجّل الدخول أولاً');
+      const idToken=actor?await actor.getIdToken():'';const guestId=publicStoreOrder?clovsGuestOrderId():'';const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),timeout);
+      try{const response=await fetch(endpoint,{method:'POST',body:new URLSearchParams({payload:JSON.stringify({action,data,idToken,guestId})}),signal:controller.signal,redirect:'follow',credentials:'omit'});const result=await response.json();if(actor&&firebaseAuth.currentUser?.uid!==actor.uid)throw new Error('جلسة الحساب تغيرت');if(!result.success){let message=result.message||'تعذر تنفيذ الطلب';if(message==='طلب غير معروف'&&['saveStore','saveStoreProduct','storeOrder','customerOrder'].includes(action))message='خدمة CLOVS المنشورة أقدم من ملف الموقع. نزّل كود الخدمة المرفق من لوحة المدير وانشره كنسخة جديدة، ثم احفظ رابط /exec الجديد.';throw new Error(message);}return result;}catch(error){if(error.name==='AbortError')throw new Error('انتهت مهلة الخدمة. أعد المحاولة بنفس السلة؛ رقم الطلب محفوظ لمنع التكرار.');throw error;}finally{clearTimeout(timer);}
     }
     async function clovsShippingLabelCanvas(order) {
       // Private label: keep PNG inside the protected order node, never on a public image host.
@@ -6944,20 +6962,47 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
     // v16 storefront, customer cart isolation and administrator tools.
     let clovsAuthResolved=false, clovsInviteShown=false, clovsInvitePreviousFocus=null;
     let clovsCartKey='guest', clovsCarts=new Map(), clovsBottomAd={imageUrl:'',linkUrl:'',desktopWidth:100,mobileWidth:100,desktopHeight:150,mobileHeight:104}, clovsSecondAd={imageUrl:'',linkUrl:'',desktopWidth:100,mobileWidth:100,desktopHeight:130,mobileHeight:96}, clovsAdBusy=false;
+    const CLOVS_CART_STORAGE_PREFIX='clovs_cart_v17_';
+    let clovsCartPersistenceInstalled=false;
     function isCustomerAudience(){return !appState.currentUser || appState.currentUser.role==='customer';}
-    function clovsEmptyCart(){return {items:[],customer:{name:'',phone:'',address:'',governorate:'القاهرة'},paymentMethod:'cod',paymentProof:{screenshot:'',senderPhone:''}};}
+    function clovsEmptyCart(){return {items:[],customer:{name:'',phone:'',address:'',governorate:'القاهرة',alternatePhone:'',landmark:'',notes:''},paymentMethod:'cod',paymentProof:{screenshot:'',senderPhone:''},orderKey:null};}
+    function clovsCartStorageKey(key){return CLOVS_CART_STORAGE_PREFIX+encodeURIComponent(String(key||'guest')).slice(0,180);}
+    function clovsCartProductSnapshot(product){
+      const p=product||{},rawImage=String(productMainImage(p)||'');
+      return {id:String(p.id||'').slice(0,128),name:String(p.name||'منتج').slice(0,200),price:Number(p.price)||0,discountPercent:Number(p.discountPercent)||0,stock:Number(p.stock)||0,image:/^https:\/\//i.test(rawImage)?rawImage.slice(0,1800):'',images:/^https:\/\//i.test(rawImage)?[rawImage.slice(0,1800)]:[],variants:Array.isArray(p.variants)?p.variants.slice(0,12):[]};
+    }
+    function clovsSanitizeCart(raw){
+      const source=raw&&typeof raw==='object'?raw:{},cart=clovsEmptyCart(),items=Array.isArray(source.items)?source.items:[];
+      cart.items=items.slice(0,30).map(item=>({product:clovsCartProductSnapshot(item?.product),quantity:Math.max(1,Math.min(100,Math.trunc(Number(item?.quantity)||1))),commission:Math.max(0,Math.min(1000000,Number(item?.commission)||0)),selectedVariants:item?.selectedVariants&&typeof item.selectedVariants==='object'&&!Array.isArray(item.selectedVariants)?{...item.selectedVariants}:{}})).filter(item=>/^[A-Za-z0-9_-]{1,128}$/.test(item.product.id));
+      const c=source.customer&&typeof source.customer==='object'?source.customer:{};
+      cart.customer={name:String(c.name||'').slice(0,100),phone:String(c.phone||'').slice(0,30),address:String(c.address||'').slice(0,300),governorate:GOVERNORATES.includes(String(c.governorate||''))?String(c.governorate):'القاهرة',alternatePhone:String(c.alternatePhone||'').slice(0,30),landmark:String(c.landmark||'').slice(0,180),notes:String(c.notes||'').slice(0,500)};
+      cart.paymentMethod=['cod','online'].includes(source.paymentMethod)?source.paymentMethod:'cod';
+      cart.paymentProof={screenshot:'',senderPhone:String(source.paymentProof?.senderPhone||'').slice(0,30)};
+      cart.orderKey=/^[A-Za-z0-9_-]{1,128}$/.test(String(source.orderKey||''))?String(source.orderKey):null;
+      return cart;
+    }
+    function clovsLoadPersistedCart(key){try{const raw=localStorage.getItem(clovsCartStorageKey(key));return raw?clovsSanitizeCart(JSON.parse(raw)):null;}catch(error){console.warn('[CLOVS cart] restore failed',error);return null;}}
+    function clovsPersistCart(key,cart){try{const safe=clovsSanitizeCart(cart);localStorage.setItem(clovsCartStorageKey(key),JSON.stringify(safe));}catch(error){console.warn('[CLOVS cart] persistence failed',error);}}
+    function clovsPersistActiveCart(){clovsCarts.set(clovsCartKey,appState.activeCart);clovsPersistCart(clovsCartKey,appState.activeCart);}
+    function clovsRestoreInitialCart(){const saved=clovsLoadPersistedCart('guest');if(saved){appState.activeCart=saved;clovsCarts.set('guest',saved);}else clovsCarts.set('guest',appState.activeCart);}
+    function clovsInstallCartPersistence(){
+      if(clovsCartPersistenceInstalled)return;clovsCartPersistenceInstalled=true;
+      const persistFromForm=event=>{const id=event.target?.id||'';if(/^cust-|^pay-sender-phone$/.test(id))queueMicrotask(clovsPersistActiveCart);if(event.target?.closest?.('#view-store-checkout'))queueMicrotask(clovsPersistStoreCart);};
+      document.addEventListener('input',persistFromForm);document.addEventListener('change',persistFromForm);window.addEventListener('pagehide',()=>{clovsPersistActiveCart();clovsPersistStoreCart();});
+    }
     function clovsSelectCart(){
       const u=appState.currentUser, key=u ? `${u.role}:${u.uid||u.id}` : 'guest';
       if(key===clovsCartKey)return;
-      clovsCarts.set(clovsCartKey,appState.activeCart);
-      const guest=clovsCarts.get('guest');
-      // Carry a visitor's own checkout into their first customer sign-in only.
-      let cart=clovsCarts.get(key) || (u?.role==='customer' && clovsCartKey==='guest' ? guest : null) || clovsEmptyCart();
-      if(u?.role==='customer' && clovsCartKey==='guest')clovsCarts.delete('guest');
-      if(!u){clovsCarts.clear();cart=clovsEmptyCart();}
-      appState.activeCart=cart;clovsCartKey=key;
+      clovsPersistActiveCart();
+      const guest=clovsCarts.get('guest')||clovsLoadPersistedCart('guest');
+      const saved=clovsCarts.get(key)||clovsLoadPersistedCart(key);
+      // Carry a visitor cart into the first customer sign-in only when that customer has no saved cart.
+      let cart=saved || (u?.role==='customer' && clovsCartKey==='guest' ? guest : null) || clovsEmptyCart();
+      if(u?.role==='customer' && clovsCartKey==='guest' && !saved){try{localStorage.removeItem(clovsCartStorageKey('guest'));}catch(_){}clovsCarts.delete('guest');}
+      if(!u){cart=clovsLoadPersistedCart('guest')||clovsEmptyCart();clovsCarts.set('guest',cart);}
+      appState.activeCart=cart;clovsCartKey=key;clovsCarts.set(key,cart);pendingCheckoutKey=cart.orderKey||null;
       if(u?.role==='customer'){cart.customer.name ||= String(u.name||'');cart.customer.phone ||= String(u.phone||'');}
-      updateCartBadge();
+      clovsPersistActiveCart();updateCartBadge();
     }
     function clovsHomeSearch(e){e.preventDefault();const query=document.getElementById('home-search').value.trim();document.getElementById('product-search-input').value=query;appState.selectedCategoryFilter='all';appState.catalogCurrentPage=1;switchView('products');}
     function clovsHomeCategory(cat){appState.selectedCategoryFilter=cat;appState.catalogCurrentPage=1;document.getElementById('product-search-input').value='';switchView('products');}
@@ -7022,6 +7067,8 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
       applySavedColorMode();
       startSliderAutoAdvance();
       applyThemeToDOM();
+      clovsRestoreInitialCart();
+      clovsInstallCartPersistence();
       updateHeaderAuthUI();
       refreshAudienceUI();
       updateFavBadge();
@@ -7070,7 +7117,14 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
     }
       // v17 additions: covers, store manager and a store cart isolated from the platform cart.
     let clovsCovers={}, clovsStore=null, clovsStoreProducts=[], clovsStoreRead=0, clovsStoreLoadingSlug='', clovsStoreSaveBusy=false;
-    let clovsStoreCart={slug:'',items:[],customer:{name:'',phone:'',address:'',governorate:'القاهرة'},orderKey:null};
+    let clovsStoreCart={slug:'',items:[],customer:{name:'',phone:'',address:'',governorate:'القاهرة',alternatePhone:'',landmark:'',notes:''},orderKey:null};
+    const CLOVS_STORE_CART_PREFIX='clovs_store_cart_v17_';
+    function clovsStoreCartKey(slug){return CLOVS_STORE_CART_PREFIX+encodeURIComponent(String(slug||'').slice(0,80));}
+    function clovsEmptyStoreCart(slug){return {slug:String(slug||''),items:[],customer:{name:'',phone:'',address:'',governorate:'القاهرة',alternatePhone:'',landmark:'',notes:''},orderKey:null};}
+    function clovsLoadStoreCart(slug){try{const raw=localStorage.getItem(clovsStoreCartKey(slug));if(!raw)return clovsEmptyStoreCart(slug);const parsed=JSON.parse(raw)||{},cart=clovsEmptyStoreCart(slug);cart.items=(Array.isArray(parsed.items)?parsed.items:[]).slice(0,30).map(item=>({productId:String(item?.productId||''),quantity:Math.max(1,Math.min(100,Math.trunc(Number(item?.quantity)||1))),selectedVariants:item?.selectedVariants&&typeof item.selectedVariants==='object'&&!Array.isArray(item.selectedVariants)?{...item.selectedVariants}:{}})).filter(item=>/^[A-Za-z0-9_-]{1,128}$/.test(item.productId));const c=parsed.customer||{};cart.customer={name:String(c.name||'').slice(0,100),phone:String(c.phone||'').slice(0,30),address:String(c.address||'').slice(0,300),governorate:GOVERNORATES.includes(String(c.governorate||''))?String(c.governorate):'القاهرة',alternatePhone:String(c.alternatePhone||'').slice(0,30),landmark:String(c.landmark||'').slice(0,180),notes:String(c.notes||'').slice(0,500)};cart.orderKey=/^[A-Za-z0-9_-]{1,128}$/.test(String(parsed.orderKey||''))?String(parsed.orderKey):null;return cart;}catch(error){console.warn('[CLOVS store cart] restore failed',error);return clovsEmptyStoreCart(slug);}}
+    function clovsPersistStoreCart(){if(!clovsStoreCart?.slug)return;try{localStorage.setItem(clovsStoreCartKey(clovsStoreCart.slug),JSON.stringify(clovsStoreCart));}catch(error){console.warn('[CLOVS store cart] persistence failed',error);}}
+    function clovsClearPersistedStoreCart(slug){try{localStorage.removeItem(clovsStoreCartKey(slug));}catch(_){}}
+    function clovsGuestOrderId(){try{let id=localStorage.getItem('clovs_store_guest_v17');if(!/^guest-[A-Za-z0-9_-]{12,100}$/.test(String(id||''))){const seed=globalThis.crypto?.randomUUID?.()||`${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;id='guest-'+String(seed).replace(/[^A-Za-z0-9_-]/g,'').slice(0,90);localStorage.setItem('clovs_store_guest_v17',id);}return id;}catch(_){return 'guest-'+Date.now()+'-'+Math.random().toString(36).slice(2,18);}}
     const CLOVS_COVER_PAGES=['products','favorites','about','shipping-rates','inspection-policy','returns-policy','contact-support','social','contests','top-marketers','legal-info'];
     const CLOVS_PAGE_NAMES={'products':'كتالوج المنتجات','favorites':'المفضلة','about':'حول CLOVS','shipping-rates':'أسعار الشحن','inspection-policy':'المعاينة','returns-policy':'الاستبدال والاسترجاع','contact-support':'الدعم','social':'السوشيال','contests':'المسابقات','top-marketers':'أفضل المسوقين','legal-info':'الحقوق والمعلومات','marketing-studio':'مصنع المحتوى','marketer-profile':'بروفايل المسوق','marketer-store':'متجري'};
     function clovsCoverKey(kind,name){return kind+'_'+Array.from(new TextEncoder().encode(String(name))).map(b=>b.toString(16).padStart(2,'0')).join('');}
@@ -7101,7 +7155,7 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
     }
     async function clovsSaveCover(e){e.preventDefault();if(!directAdminAllowed())return;const form=e.target,status=document.getElementById('cover-status');form.querySelectorAll('button').forEach(b=>b.disabled=true);try{status.textContent='جاري حفظ الغلاف...';const sel=document.getElementById('cover-target'),o=sel.selectedOptions[0],url=await clovsUploadedImage(document.getElementById('cover-file').files[0],document.getElementById('cover-url').value.trim(),'clovs/covers');if(!url)throw new Error('اختار صورة أولاً');const data={kind:o.dataset.kind,name:o.dataset.name,imageUrl:url,updatedAt:Date.now()};await setAndVerifyFirebase(firebaseDB.ref('siteSettings/covers/'+sel.value),data,s=>s?.imageUrl===url,'الغلاف');status.textContent='تم حفظ الغلاف';showToast('تم حفظ الغلاف');}catch(err){status.textContent=err.message;showToast(err.message,'error');}finally{form.querySelectorAll('button').forEach(b=>b.disabled=false);}}
     async function clovsDeleteCover(){if(!directAdminAllowed())return;try{await firebaseDB.ref('siteSettings/covers/'+document.getElementById('cover-target').value).remove();clovsPreviewCover();showToast('تمت إزالة الغلاف');}catch(e){showToast('تعذر إزالة الغلاف','error');}}
-    function clovsStoreLink(slug){const url=new URL('CLOVS-Marketer-Store.html',location.href);url.search='';url.hash='';url.searchParams.set('store',String(slug||'').normalize('NFKC').trim().toLowerCase());return url.href;}
+    function clovsStoreLink(slug){const url=new URL(location.href);url.search='';url.hash='';url.searchParams.set('store',String(slug||'').normalize('NFKC').trim().toLowerCase());return url.href;}
     async function clovsCopyStoreLink(){try{const slug=document.getElementById('my-store-link')?.dataset.slug||clovsStore?.slug;if(!slug)return;await navigator.clipboard.writeText(clovsStoreLink(slug));showToast('تم نسخ رابط المتجر');}catch(e){showToast('انسخ الرابط من الخانة','info');}}
     async function renderMarketerStore(initialStore){
       const uid=firebaseAuth.currentUser?.uid;if(appState.currentUser?.role!=='marketer'||!uid)return;
@@ -7128,7 +7182,7 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
       if(clovsStoreLoadingSlug===slug)return;
       clovsStoreLoadingSlug=slug;
       const serial=++clovsStoreRead,el=document.getElementById('view-storefront');el.innerHTML='<div class="clovs-panel">جاري تحميل المتجر...</div>';
-      try{if(!/^[a-z0-9\u0621-\u063a\u0641-\u064a-]{3,48}$/.test(slug))throw new Error('رابط المتجر غير صالح');const idx=await firebaseDB.ref('storeSlugs/'+slug).once('value');if(!idx.exists())throw new Error('المتجر غير موجود في Firebase');const snap=await firebaseDB.ref('marketerStores/'+idx.val()).once('value');const s=snap.val();if(!s||String(s.slug||'').normalize('NFKC').trim().toLowerCase()!==slug||s.enabled===false)throw new Error('المتجر غير منشور أو بيانات رابطه غير متطابقة');const products=await Promise.all(Object.values(s.products||{}).map(async item=>{const p=await productsRef.child(item.productId).once('value');return p.exists()?{...p.val(),id:item.productId,storePrice:Number(item.price)}:null;}));if(serial!==clovsStoreRead)return;clovsStore=s;clovsStoreProducts=products.filter(Boolean);if(clovsStoreCart.slug!==slug)clovsStoreCart={slug:slug,items:[],customer:{name:'',phone:'',address:'',governorate:'القاهرة'},orderKey:null};clovsRenderPublicStore();}
+      try{if(!/^[a-z0-9\u0621-\u063a\u0641-\u064a-]{3,48}$/.test(slug))throw new Error('رابط المتجر غير صالح');const idx=await firebaseDB.ref('storeSlugs/'+slug).once('value');if(!idx.exists())throw new Error('المتجر غير موجود في Firebase');const snap=await firebaseDB.ref('marketerStores/'+idx.val()).once('value');const s=snap.val();if(!s||String(s.slug||'').normalize('NFKC').trim().toLowerCase()!==slug||s.enabled===false)throw new Error('المتجر غير منشور أو بيانات رابطه غير متطابقة');const products=await Promise.all(Object.values(s.products||{}).map(async item=>{const p=await productsRef.child(item.productId).once('value');return p.exists()?{...p.val(),id:item.productId,storePrice:Number(item.price)}:null;}));if(serial!==clovsStoreRead)return;clovsStore=s;clovsStoreProducts=products.filter(Boolean);if(clovsStoreCart.slug!==slug){clovsPersistStoreCart();clovsStoreCart=clovsLoadStoreCart(slug);}clovsRenderPublicStore();}
       catch(e){if(serial!==clovsStoreRead)return;console.error('[CLOVS storefront] failed to open store:',slug,e);clovsStore=null;clovsStoreProducts=[];el.innerHTML='<div class="clovs-panel"><h2>المتجر غير متاح</h2><p>الرابط غير محفوظ أو المتجر غير منشور. تأكد من حفظ المتجر وتفعيل خيار نشر المتجر.</p><button class="clovs-primary-button mt-3" onclick="clovsExitStore()">تصفح CLOVS</button></div>';}
       finally{if(serial===clovsStoreRead)clovsStoreLoadingSlug='';}
     }
@@ -7136,13 +7190,13 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
     function clovsRenderPublicStore(){if(!clovsStore)return;const s=clovsStore,cartCount=clovsStoreCart.items.reduce((n,i)=>n+i.quantity,0);document.getElementById('view-storefront').innerHTML=`<div class="merchant-shop"><header class="merchant-shop-hero">${s.coverUrl?`<img class="merchant-shop-cover" src="${escapeHtml(clovsSafeLink(s.coverUrl))}" alt="كفر ${escapeHtml(s.name)}">`:''}<div class="merchant-shop-hero-shade"></div><div class="merchant-shop-brand">${s.logoUrl?`<img src="${escapeHtml(clovsSafeLink(s.logoUrl))}" alt="لوجو ${escapeHtml(s.name)}">`:'<span class="merchant-shop-logo-fallback"><i class="fa-solid fa-store"></i></span>'}<div><span class="merchant-shop-kicker">متجر مستقل</span><h1>${escapeHtml(s.name)}</h1>${s.bio?`<p>${escapeHtml(s.bio)}</p>`:''}</div></div></header><main class="merchant-shop-content"><div class="merchant-shop-toolbar"><div><span class="merchant-shop-section-label">تشكيلة المتجر</span><h2>اختار اللي يناسبك</h2><p>${clovsStoreProducts.length} منتج متاح للتصفح</p></div><button class="merchant-shop-cart-button" onclick="switchView('store-checkout')"><i class="fa-solid fa-bag-shopping"></i><span>سلة الطلب</span><b>${cartCount}</b></button></div><div class="merchant-shop-grid">${clovsStoreProducts.map(p=>{const available=Number(p.stock)>0&&p.storePrice>=getProductPrice(p);return `<article class="merchant-shop-card"><button class="merchant-shop-product-hit" onclick="clovsStoreProductDetails('${escapeHtml(p.id)}')"><div class="merchant-shop-image-wrap"><img src="${escapeHtml(safeImageUrl(productMainImage(p)))}" alt="${escapeHtml(p.name)}" loading="lazy" onerror="this.onerror=null;this.src='${PRODUCT_PLACEHOLDER}'">${!available?'<span class="merchant-shop-unavailable">غير متاح</span>':''}</div><h3>${escapeHtml(p.name)}</h3></button><div class="merchant-shop-card-bottom"><strong>${money(p.storePrice)} <small>ج.م</small></strong><button aria-label="اختيار ${escapeHtml(p.name)}" ${available?'':'disabled'} onclick="clovsStoreProductDetails('${escapeHtml(p.id)}')"><i class="fa-solid fa-arrow-left"></i></button></div></article>`;}).join('')||'<div class="merchant-shop-empty">المتجر بيجهّز منتجاته، ارجع قريبًا.</div>'}</div></main><footer class="merchant-shop-footer"><span>${escapeHtml(s.name)}</span><span>طلب آمن · دفع عند الاستلام</span><small>تشغيل الطلبات عبر CLOVS</small></footer></div>`;}
 
     async function clovsStoreProductDetails(id){try{const old=clovsStoreProducts.find(p=>p.id===id);if(!old||!clovsStore)throw new Error('المنتج غير متاح');const snap=await productsRef.child(id).once('value');if(!snap.exists())throw new Error('المنتج غير متاح');const p={...snap.val(),id,storePrice:old.storePrice};clovsStoreProducts=clovsStoreProducts.map(x=>x.id===id?p:x);openModal(p.name,'');const variants=Array.isArray(p.variants)?p.variants:Object.values(p.variants||{});document.getElementById('modal-message').innerHTML=`<img class="w-full max-h-72 object-contain" src="${escapeHtml(safeImageUrl(productMainImage(p)))}" alt="${escapeHtml(p.name)}"><p class="whitespace-pre-wrap mt-3">${escapeHtml(p.desc||'')}</p><strong class="block mt-3">${money(p.storePrice)} ج.م</strong>${variants.map((v,i)=>`<label class="clovs-label mt-3">${escapeHtml(v.name)}<select class="clovs-input" data-store-variant="${i}"><option value="">اختار</option>${(Array.isArray(v.options)?v.options:Object.values(v.options||{})).map(o=>`<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join('')}</select></label>`).join('')}`;document.getElementById('modal-actions').innerHTML=`<button class="clovs-primary-button" onclick="clovsAddStoreCart('${escapeHtml(id)}')">إضافة لسلة المتجر</button><button class="clovs-soft-button" onclick="closeModal()">إغلاق</button>`;}catch(e){showToast(e.message,'error');}}
-    function clovsAddStoreCart(id){const p=clovsStoreProducts.find(x=>x.id===id);if(!p||!clovsStore)return;const vs=Array.isArray(p.variants)?p.variants:Object.values(p.variants||{}),selected={};for(let i=0;i<vs.length;i++){const value=document.querySelector('[data-store-variant="'+i+'"]').value;if(!value)return showToast('اختار كل خيارات المنتج','error');selected[vs[i].name]=value;}if(Number(p.stock)<1||p.storePrice<getProductPrice(p))return showToast('المنتج غير متاح بهذا السعر حاليًا','error');if(clovsStoreCart.items.reduce((n,i)=>n+(i.productId===id?i.quantity:0),0)>=Number(p.stock))return showToast('الكمية أكبر من المخزون','error');if(clovsStoreCart.items.length>=30)return showToast('الحد الأقصى 30 صنفًا للطلب','error');const old=clovsStoreCart.items.find(i=>i.productId===id&&JSON.stringify(i.selectedVariants)===JSON.stringify(selected));if(old)old.quantity++;else clovsStoreCart.items.push({productId:id,quantity:1,selectedVariants:selected});closeModal();clovsStoreCart.orderKey=null;clovsRenderPublicStore();showToast('تمت الإضافة لسلة المتجر');}
-    function clovsStoreCartChange(index,delta){if(orderSubmissionInProgress)return;const item=clovsStoreCart.items[index],p=clovsStoreProducts.find(x=>x.id===item?.productId);if(!item)return;if(delta>0&&(!p||clovsStoreCart.items.reduce((n,i)=>n+(i.productId===item.productId?i.quantity:0),0)>=Number(p.stock)))return showToast('الكمية غير متاحة','error');item.quantity+=delta;if(item.quantity<=0)clovsStoreCart.items.splice(index,1);clovsStoreCart.orderKey=null;renderStoreCheckout();}
+    function clovsAddStoreCart(id){const p=clovsStoreProducts.find(x=>x.id===id);if(!p||!clovsStore)return;const vs=Array.isArray(p.variants)?p.variants:Object.values(p.variants||{}),selected={};for(let i=0;i<vs.length;i++){const value=document.querySelector('[data-store-variant="'+i+'"]').value;if(!value)return showToast('اختار كل خيارات المنتج','error');selected[vs[i].name]=value;}if(Number(p.stock)<1||p.storePrice<getProductPrice(p))return showToast('المنتج غير متاح بهذا السعر حاليًا','error');if(clovsStoreCart.items.reduce((n,i)=>n+(i.productId===id?i.quantity:0),0)>=Number(p.stock))return showToast('الكمية أكبر من المخزون','error');if(clovsStoreCart.items.length>=30)return showToast('الحد الأقصى 30 صنفًا للطلب','error');const old=clovsStoreCart.items.find(i=>i.productId===id&&JSON.stringify(i.selectedVariants)===JSON.stringify(selected));if(old)old.quantity++;else clovsStoreCart.items.push({productId:id,quantity:1,selectedVariants:selected});closeModal();clovsStoreCart.orderKey=null;clovsPersistStoreCart();clovsRenderPublicStore();showToast('تمت الإضافة لسلة المتجر');}
+    function clovsStoreCartChange(index,delta){if(orderSubmissionInProgress)return;const item=clovsStoreCart.items[index],p=clovsStoreProducts.find(x=>x.id===item?.productId);if(!item)return;if(delta>0&&(!p||clovsStoreCart.items.reduce((n,i)=>n+(i.productId===item.productId?i.quantity:0),0)>=Number(p.stock)))return showToast('الكمية غير متاحة','error');item.quantity+=delta;if(item.quantity<=0)clovsStoreCart.items.splice(index,1);clovsStoreCart.orderKey=null;clovsPersistStoreCart();renderStoreCheckout();}
     function renderStoreCheckout(){const el=document.getElementById('view-store-checkout');if(!clovsStore){el.innerHTML='<div class="merchant-shop-empty">افتح رابط المتجر أولاً.</div>';return;}const c=clovsStoreCart.customer,items=clovsStoreCart.items,sub=roundMoneyValue(items.reduce((n,i)=>n+(clovsStoreProducts.find(p=>p.id===i.productId)?.storePrice||0)*i.quantity,0)),shipping=Number(appState.shippingRates[c.governorate]??DEFAULT_SHIPPING[c.governorate]);el.innerHTML=`<div class="merchant-shop merchant-shop-checkout"><div class="merchant-shop-inner"><div class="merchant-shop-checkout-top"><button class="merchant-shop-light-button" onclick="switchView('storefront')"><i class="fa-solid fa-arrow-right"></i> رجوع للمتجر</button><div><span class="merchant-shop-section-label">${escapeHtml(clovsStore.name)}</span><h1>إتمام الطلب</h1></div></div><div class="merchant-shop-checkout-grid"><section class="merchant-shop-box"><h2>مراجعة السلة</h2>${items.map((i,index)=>{const p=clovsStoreProducts.find(p=>p.id===i.productId);return `<div class="merchant-shop-cart-line"><img src="${escapeHtml(safeImageUrl(p?productMainImage(p):''))}" alt=""><div><strong>${escapeHtml(p?.name||'منتج')}</strong><small>${escapeHtml(Object.entries(i.selectedVariants||{}).map(([k,v])=>k+': '+v).join(' · '))}<br>${money(p?.storePrice||0)} ج.م</small></div><button aria-label="تقليل الكمية" onclick="clovsStoreCartChange(${index},-1)">−</button><span>${i.quantity}</span><button aria-label="زيادة الكمية" onclick="clovsStoreCartChange(${index},1)">+</button></div>`;}).join('')||'<p class="merchant-shop-muted">السلة فارغة. ارجع للمتجر واختار منتجاتك.</p>'}<div class="merchant-shop-totals"><p>قيمة المنتجات <b>${money(sub)} ج.م</b></p><p id="store-shipping-total">الشحن <b>${money(shipping)} ج.م</b></p><strong id="store-grand-total">الإجمالي <b>${money(sub+shipping)} ج.م</b></strong></div></section><form class="merchant-shop-box merchant-shop-form" onsubmit="clovsSubmitStoreOrder(event)"><h2>بيانات التوصيل</h2><p class="merchant-shop-muted">كمّل بياناتك كضيف، من غير تسجيل أو إنشاء حساب.</p>${[['name','اسم المستلم',100],['phone','رقم الهاتف',11],['alternatePhone','هاتف إضافي (اختياري)',11],['address','العنوان بالتفصيل',300],['landmark','علامة مميزة (اختياري)',180],['notes','ملاحظات للمندوب (اختياري)',500]].map(([key,label,max])=>`<label class="merchant-shop-label">${label}<input class="merchant-shop-input" maxlength="${max}" ${['name','phone','address'].includes(key)?'required':''} value="${escapeHtml(c[key]||'')}" oninput="clovsStoreCart.customer['${key}']=this.value"></label>`).join('')}<label class="merchant-shop-label">المحافظة<select class="merchant-shop-input" onchange="clovsStoreCart.customer.governorate=this.value;clovsUpdateStoreTotals()">${GOVERNORATES.map(g=>`<option value="${escapeHtml(g)}" ${g===c.governorate?'selected':''}>${escapeHtml(g)}</option>`).join('')}</select></label><div class="merchant-shop-note"><i class="fa-solid fa-box"></i> الدفع عند الاستلام، وفريق المتجر هيتواصل معاك لتأكيد الطلب.</div><button id="store-checkout-submit" class="merchant-shop-button" ${items.length?'':'disabled'}>تأكيد الطلب</button><p id="store-checkout-status" role="status"></p></form></div><footer class="merchant-shop-footer"><span>${escapeHtml(clovsStore.name)}</span><small>تشغيل الطلبات عبر CLOVS</small></footer></div>`;}
 
     function clovsUpdateStoreTotals(){const c=clovsStoreCart.customer,sub=roundMoneyValue(clovsStoreCart.items.reduce((n,i)=>n+(clovsStoreProducts.find(p=>p.id===i.productId)?.storePrice||0)*i.quantity,0)),shipping=Number(appState.shippingRates[c.governorate]??DEFAULT_SHIPPING[c.governorate]);const a=document.getElementById('store-shipping-total'),b=document.getElementById('store-grand-total');if(a)a.textContent='الشحن: '+money(shipping)+' ج.م';if(b)b.textContent='الإجمالي: '+money(sub+shipping)+' ج.م';}
-    async function clovsEnsureStoreGuestSession(){if(firebaseAuth.currentUser)return firebaseAuth.currentUser;try{return (await firebaseAuth.signInAnonymously()).user;}catch(error){if(error?.code==='auth/operation-not-allowed')throw new Error('الشراء كضيف يحتاج تفعيل Anonymous مرة واحدة من Firebase Authentication.');throw new Error('تعذر تجهيز جلسة شراء الضيف: '+String(error?.message||'حاول مرة أخرى').slice(0,100));}}
-    async function clovsSubmitStoreOrder(e){e.preventDefault();if(orderSubmissionInProgress||!clovsStoreCart.items.length)return;const b=document.getElementById('store-checkout-submit'),status=document.getElementById('store-checkout-status');orderSubmissionInProgress=true;b.disabled=true;try{status.textContent='جاري مراجعة السعر والمخزون وحفظ الطلب...';const latest=await firebaseDB.ref('marketerStores/'+clovsStore.ownerUid).once('value');if(!latest.exists()||latest.val().enabled===false)throw new Error('المتجر غير متاح');clovsStore=latest.val();const products=await Promise.all(clovsStoreCart.items.map(async i=>{const p=await productsRef.child(i.productId).once('value');if(!p.exists())throw new Error('أحد المنتجات غير متاح');const entry=clovsStore.products?.[i.productId];if(!entry)throw new Error('أحد المنتجات أُزيل من المتجر');return {...p.val(),id:i.productId,storePrice:Number(entry.price)};}));clovsStoreProducts=Array.from(new Map([...clovsStoreProducts,...products].map(p=>[p.id,p])).values());const c={...clovsStoreCart.customer},key=clovsStoreCart.orderKey||ordersRef.push().key;clovsStoreCart.orderKey=key;const items=clovsStoreCart.items.map(i=>{const p=products.find(p=>p.id===i.productId);return {product:p,quantity:i.quantity,commission:roundMoneyValue(p.storePrice-getProductPrice(p)),selectedVariants:i.selectedVariants};}),subtotal=roundMoneyValue(items.reduce((n,i)=>n+(getProductPrice(i.product)+i.commission)*i.quantity,0)),shipping=roundMoneyValue(Number(appState.shippingRates[c.governorate]??DEFAULT_SHIPPING[c.governorate])),order={id:'ORD-'+key,createdAt:Date.now(),customer:c,items,subtotal,shippingRate:shipping,grandTotal:roundMoneyValue(subtotal+shipping),marketerName:clovsStore.name,marketerPageName:clovsStore.name,paymentMethod:'cod'};clovsUpdateStoreTotals();await clovsEnsureStoreGuestSession();const canvas=await clovsShippingLabelCanvas(order);const r=await clovsService('storeOrder',{storeSlug:clovsStore.slug,orderKey:key,items:clovsStoreCart.items,customer:c,paymentMethod:'cod',paymentProof:{},shippingLabelData:canvas.toDataURL('image/png'),expectedGrandTotal:order.grandTotal});clovsStoreCart.items=[];clovsStoreCart.orderKey=null;clovsService('notifyOrder',{orderKey:key},45000).catch(()=>{});openModal('تم تأكيد طلبك','رقم الطلب: ORD-'+key+' · الإجمالي: '+money(r.grandTotal)+' ج.م');switchView('storefront');}catch(err){status.textContent=err.message;showToast(err.message,'error');}finally{orderSubmissionInProgress=false;b.disabled=false;}}
+    async function clovsEnsureStoreGuestSession(){if(firebaseAuth.currentUser)return firebaseAuth.currentUser;try{return (await firebaseAuth.signInAnonymously()).user;}catch(error){if(error?.code==='auth/operation-not-allowed'||error?.code==='auth/admin-restricted-operation')return null;throw new Error('تعذر تجهيز جلسة شراء الضيف: '+String(error?.message||'حاول مرة أخرى').slice(0,100));}}
+    async function clovsSubmitStoreOrder(e){e.preventDefault();if(orderSubmissionInProgress||!clovsStoreCart.items.length)return;const b=document.getElementById('store-checkout-submit'),status=document.getElementById('store-checkout-status'),inputCustomer=clovsStoreCart.customer||{};const name=String(inputCustomer.name||'').trim(),phone=String(inputCustomer.phone||'').trim(),address=String(inputCustomer.address||'').trim(),alternatePhone=String(inputCustomer.alternatePhone||'').trim();if(!name||name.length>100||!/^01[0-9]{9}$/.test(phone)||!address||address.length>300||!GOVERNORATES.includes(inputCustomer.governorate)||(alternatePhone&&!/^01[0-9]{9}$/.test(alternatePhone)))return showToast('راجع الاسم ورقم الهاتف والعنوان والمحافظة قبل تأكيد الطلب','error');orderSubmissionInProgress=true;b.disabled=true;clovsPersistStoreCart();try{status.textContent='جاري مراجعة السعر والمخزون وحفظ الطلب...';const latest=await firebaseDB.ref('marketerStores/'+clovsStore.ownerUid).once('value');if(!latest.exists()||latest.val().enabled===false)throw new Error('المتجر غير متاح');clovsStore=latest.val();const products=await Promise.all(clovsStoreCart.items.map(async i=>{const p=await productsRef.child(i.productId).once('value');if(!p.exists())throw new Error('أحد المنتجات غير متاح');const entry=clovsStore.products?.[i.productId];if(!entry)throw new Error('أحد المنتجات أُزيل من المتجر');return {...p.val(),id:i.productId,storePrice:Number(entry.price)};}));clovsStoreProducts=Array.from(new Map([...clovsStoreProducts,...products].map(p=>[p.id,p])).values());const c={...clovsStoreCart.customer},key=clovsStoreCart.orderKey||ordersRef.push().key;clovsStoreCart.orderKey=key;const items=clovsStoreCart.items.map(i=>{const p=products.find(p=>p.id===i.productId);return {product:p,quantity:i.quantity,commission:roundMoneyValue(p.storePrice-getProductPrice(p)),selectedVariants:i.selectedVariants};}),subtotal=roundMoneyValue(items.reduce((n,i)=>n+(getProductPrice(i.product)+i.commission)*i.quantity,0)),shipping=roundMoneyValue(Number(appState.shippingRates[c.governorate]??DEFAULT_SHIPPING[c.governorate])),order={id:'ORD-'+key,createdAt:Date.now(),customer:c,items,subtotal,shippingRate:shipping,grandTotal:roundMoneyValue(subtotal+shipping),marketerName:clovsStore.name,marketerPageName:clovsStore.name,paymentMethod:'cod'};clovsUpdateStoreTotals();await clovsEnsureStoreGuestSession();const canvas=await clovsShippingLabelCanvas(order);const r=await clovsService('storeOrder',{storeSlug:clovsStore.slug,orderKey:key,items:clovsStoreCart.items,customer:c,paymentMethod:'cod',paymentProof:{},shippingLabelData:canvas.toDataURL('image/png'),expectedGrandTotal:order.grandTotal});clovsStoreCart.items=[];clovsStoreCart.orderKey=null;clovsClearPersistedStoreCart(clovsStore.slug);clovsPersistStoreCart();if(firebaseAuth.currentUser)clovsService('notifyOrder',{orderKey:key},45000).catch(()=>{});openModal('تم تأكيد طلبك','رقم الطلب: ORD-'+key+' · الإجمالي: '+money(r.grandTotal)+' ج.م');switchView('storefront');}catch(err){status.textContent=err.message;showToast(err.message,'error');}finally{orderSubmissionInProgress=false;b.disabled=false;}}
     function clovsOpenCart(){if(clovsStore&&['storefront','store-checkout','auth'].includes(appState.currentView))return switchView('store-checkout');switchView(appState.currentUser?.role==='marketer'?'marketer-order':'cart');}
     async function clovsTestTelegram(){const el=document.getElementById('clovs-integration-status');try{el.textContent='جاري اختبار الإرسال...';const r=await clovsService('testTelegram');el.textContent='تم إرسال رسالة اختبار للبوت · متابعة الطلبات: '+(r.triggerInstalled?'مفعّلة':'شغّل installClovs في Apps Script');}catch(e){el.textContent=e.message;}}
 
@@ -7156,8 +7210,8 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
 Required: FIREBASE_SERVICE_ACCOUNT_JSON, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID.
 AI: CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN.
 Optional: CLOUDFLARE_TEXT_MODEL (@cf/zai-org/glm-4.7-flash), CLOUDFLARE_IMAGE_MODEL (@cf/black-forest-labs/flux-2-klein-4b),
-Plans: beginner=5, intermediate=20, pro=60 unique products/day across AI copy + image tools. Run installClovs() once.
-Deploy Web app: execute as Me, access Anyone. Save /exec URL in CLOVS admin.
+Plans: beginner=8, intermediate=20, pro=60 unique products/day across AI copy + image tools. Run installClovs() once.
+Deploy Web app: execute as Me, access Anyone. Save /exec URL in CLOVS admin. Public storefront orders are validated server-side and can work even if Firebase Anonymous Auth is disabled.
 Disable the old order notification trigger to prevent double notifications.
 */
 const C_DB = 'https://clovs-eg-default-rtdb.firebaseio.com';
@@ -7200,6 +7254,10 @@ function cDB(path, method, body, query) {
 }
 function cKey(v) { if (!/^[A-Za-z0-9_-]{1,128}$/.test(String(v || ''))) throw new Error('معرّف غير صالح'); return String(v); }
 function cMoney(v) { const n = Number(v); if (!Number.isFinite(n)) throw new Error('قيمة مالية غير صالحة'); return Math.round((n+Number.EPSILON)*100)/100; }
+function cPublicStoreGuest(value) {
+  const id=String(value||'').trim();if(!/^guest-[A-Za-z0-9_-]{12,100}$/.test(id))throw new Error('تعذر تجهيز جلسة شراء المتجر');
+  return {uid:id,profile:null,role:'guest',admin:false,owner:false,customer:false,guest:true};
+}
 function cActor(token) {
   if (!token || String(token).length > 6000) throw new Error('سجّل الدخول أولاً');
   const response = cFetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key='+C_WEB_KEY,{method:'post',contentType:'application/json',payload:JSON.stringify({idToken:String(token)})});
@@ -7220,7 +7278,7 @@ function doPost(e) {
   try {
     if (Number(e.contentLength) > 3000000) throw new Error('حجم الطلب كبير');
     const input = JSON.parse((e.parameter && e.parameter.payload) || (e.postData && e.postData.contents) || '{}');
-    const actor = cActor(input.idToken), data = input.data || {};
+    const actor = input.idToken ? cActor(input.idToken) : (input.action === 'storeOrder' ? cPublicStoreGuest(input.guestId) : cActor('')), data = input.data || {};
     switch (input.action) {
       case 'health': {
         if (!actor.owner) throw new Error('ليس لديك صلاحية');
@@ -7232,7 +7290,7 @@ function doPost(e) {
           try { const textModel=cCloudflareModelName('text'),imageModel=cCloudflareModelName('image'),textModels=cCloudflareModels(textModel),imageModels=cCloudflareModels(imageModel);aiReady=!!(textModels&&textModels.success===true&&Array.isArray(textModels.result)&&textModels.result.length&&imageModels&&imageModels.success===true&&Array.isArray(imageModels.result)&&imageModels.result.length);aiMessage=aiReady?'تم التحقق من موديل النص والصور وصلاحية Cloudflare Read':'الموديل غير موجود أو غير متاح للحساب'; }
           catch(error) { aiMessage=String(error.message||'تعذر التحقق من Cloudflare').slice(0,150); }
         }
-        return cJSON({success:true,version:17,aiProvider:'cloudflare',telegramReady:telegramReady,aiReady:aiReady,aiMessage:aiMessage,aiTextModel:cProp('CLOUDFLARE_TEXT_MODEL')||'@cf/zai-org/glm-4.7-flash',aiImageModel:cProp('CLOUDFLARE_IMAGE_MODEL')||'@cf/black-forest-labs/flux-2-klein-4b',triggerInstalled:ScriptApp.getProjectTriggers().some(t=>t.getHandlerFunction()==='pollClovsOrders'),plans:{beginner:{limit:5,minDelivered:0},intermediate:{limit:20,minDelivered:60},pro:{limit:60,minDelivered:250}}});
+        return cJSON({success:true,version:17,aiProvider:'cloudflare',telegramReady:telegramReady,aiReady:aiReady,aiMessage:aiMessage,aiTextModel:cProp('CLOUDFLARE_TEXT_MODEL')||'@cf/zai-org/glm-4.7-flash',aiImageModel:cProp('CLOUDFLARE_IMAGE_MODEL')||'@cf/black-forest-labs/flux-2-klein-4b',triggerInstalled:ScriptApp.getProjectTriggers().some(t=>t.getHandlerFunction()==='pollClovsOrders'),plans:{beginner:{limit:8,minDelivered:0},intermediate:{limit:20,minDelivered:60},pro:{limit:60,minDelivered:250}}});
       }
       case 'saveStore': return cJSON(cLocked(()=>cSaveStore(actor,data)));
       case 'saveStoreProduct': return cJSON(cLocked(()=>cSaveStoreProduct(actor,data)));
@@ -7315,7 +7373,7 @@ function cCustomerOrder(actor,data,mode) {
     shippingRate:shippingRate,subtotal:subtotal,totalCommission:cMoney(totalCommission),grandTotal:cMoney(subtotal+shippingRate),paymentMethod:paymentMethod,
     paymentProof:paymentMethod==='online'?{screenshot:screenshot,senderPhone:senderPhone}:{screenshot:'',senderPhone:''},commissionCredited:false,status:'pending',shippingLabelData:label
   };
-  if(!Number.isFinite(Number(data.expectedGrandTotal))||Math.abs(Number(data.expectedGrandTotal)-order.grandTotal)>0.011)throw new Error('السعر أو الشحن تغير؛ راجع الإجمالي وأعد تأكيد الطلب');
+  if(data.expectedGrandTotal!==undefined&&data.expectedGrandTotal!==null&&(!Number.isFinite(Number(data.expectedGrandTotal))||Math.abs(Number(data.expectedGrandTotal)-order.grandTotal)>0.011))throw new Error('السعر أو الشحن تغير؛ راجع الإجمالي وأعد تأكيد الطلب');
   const creation={};creation['orders/'+orderKey]=order;creation['clovsNotifications/'+orderKey]={complete:false,nextAttemptAt:now,createdAt:now};cDB('','patch',creation);
   const saved=cDB('orders/'+orderKey);if(!saved||(mode==='marketer'?saved.marketerUid!==actor.uid:saved.customerUid!==actor.uid)||saved.status!=='pending')throw new Error('تعذر التحقق من حفظ الطلب');
   return {success:true,idempotent:false,orderKey:orderKey,totalCommission:Number(saved.totalCommission)||0,grandTotal:Number(saved.grandTotal)||0};
@@ -7465,7 +7523,7 @@ function checkClovsAISetup() {
   return result;
 }
 const C_AI_PLANS = {
-  beginner:{key:'beginner',name:'المبتدئ',limit:5,minDelivered:0},
+  beginner:{key:'beginner',name:'المبتدئ',limit:8,minDelivered:0},
   intermediate:{key:'intermediate',name:'المتوسط',limit:20,minDelivered:60},
   pro:{key:'pro',name:'المحترف',limit:60,minDelivered:250}
 };
@@ -8022,7 +8080,7 @@ function cReserveAIProduct(actor,id) {
         "marketerUid"
       ],
       "$id": {
-        ".read": "(auth != null && (auth.uid === 'zAeUYXEN3jS18kBC3QXZOVcedk12' || root.child('staffRoles').child(auth.uid).val() === 'admin')) || (auth != null && data.child('marketerUid').val() === auth.uid)",
+        ".read": "(auth != null && (auth.uid === 'zAeUYXEN3jS18kBC3QXZOVcedk12' || root.child('staffRoles').child(auth.uid).val() === 'admin')) || (auth != null && (data.child('marketerUid').val() === auth.uid || data.child('customerUid').val() === auth.uid))",
         ".write": "auth != null && !data.exists() && newData.exists() && root.child('marketerProfiles').child(auth.uid).child('status').val() === 'approved' && newData.child('marketerUid').val() === auth.uid && newData.child('status').val() === 'pending' && newData.child('commissionCredited').val() === false",
         ".validate": "data.exists() || (newData.hasChildren(['id','marketerUid','customer','items','shippingRate','subtotal','totalCommission','grandTotal','status','createdAt','paymentMethod','commissionCredited']) && newData.child('id').val() === 'ORD-' + $id && newData.child('marketerId').val() === 'firebase-marketer-' + auth.uid && newData.child('grandTotal').val() === newData.child('subtotal').val() + newData.child('shippingRate').val() && newData.child('createdAt').isNumber() && newData.child('createdAt').val() > now - 300000 && newData.child('createdAt').val() < now + 10000 && (newData.child('paymentMethod').val() === 'cod' || newData.child('paymentMethod').val() === 'online'))",
         "shippingLabelData": {
