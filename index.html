@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="clovs-build" content="2026-10-04-v18-cart-order-runtime-motion-fix">
+  <meta name="clovs-build" content="2026-10-05-v21-store-limit-password-recovery">
   <title id="html-page-title">Clovs | كلوفز للمنتجات والتسوق وخدمات المسوقين في مصر</title>
   <meta name="description" content="Clovs كلوفز متجر ومنصة خدمات في مصر: تصفح المنتجات والأسعار والعروض، مع أدوات مخصصة للمسوقين بعد تسجيل الدخول بحساب مسوق.">
   <meta name="robots" content="index,follow,max-image-preview:large">
@@ -985,8 +985,11 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
             <input type="email" id="reg-email" required autocomplete="email" dir="ltr" placeholder="email@example.com" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-500 transition">
           </div>
           <div>
-            <label class="block text-xs font-bold text-slate-700 mb-1.5">كلمة المرور (8 أحرف أو أرقام على الأقل)</label>
-            <input type="password" id="reg-password" required minlength="8" autocomplete="new-password" placeholder="8 أحرف على الأقل" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-500 transition">
+            <label class="block text-xs font-bold text-slate-700 mb-1.5" for="reg-password">كلمة المرور (8 أحرف أو أرقام على الأقل)</label>
+            <div class="relative">
+              <input type="password" id="reg-password" required minlength="8" autocomplete="new-password" placeholder="8 أحرف على الأقل" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 pl-12 text-sm focus:outline-none focus:border-brand-500 transition">
+              <button type="button" class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-brand-700 p-2" onclick="togglePasswordVisibility('reg-password',this)" aria-label="إظهار كلمة المرور" title="إظهار كلمة المرور"><i class="fa-solid fa-eye"></i></button>
+            </div>
           </div>
           <div>
             <label class="block text-xs font-bold text-slate-700 mb-1.5">نوع الحساب (الدور)</label>
@@ -4668,12 +4671,59 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
       }
     }
 
+    function togglePasswordVisibility(inputId, button) {
+      const input = document.getElementById(inputId);
+      if (!input || !button) return;
+      const visible = input.type === 'password';
+      input.type = visible ? 'text' : 'password';
+      button.setAttribute('aria-label', visible ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور');
+      button.title = visible ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور';
+      button.innerHTML = `<i class="fa-solid fa-${visible ? 'eye-slash' : 'eye'}"></i>`;
+    }
+
     function showForgotPasswordHelp() {
-      const phone = String(appState.contactInfo?.phone || appState.contactInfo?.whatsapp || '').trim();
-      const message = phone
-        ? `لاستعادة أو تغيير كلمة المرور تواصل مع الإدارة على الرقم: ${phone}`
-        : 'لاستعادة أو تغيير كلمة المرور تواصل مع إدارة المنصة.';
-      openModal('هل نسيت كلمة المرور؟', message);
+      const currentEmail = String(document.getElementById('login-username')?.value || '').trim();
+      openModal('استعادة كلمة المرور', '');
+      const content = document.getElementById('modal-message');
+      content.innerHTML = `<div class="space-y-3 text-right"><p class="text-sm text-slate-600">اكتب البريد الإلكتروني المسجل في حسابك، وسنرسل لك رابطًا آمنًا لتعيين كلمة مرور جديدة.</p><label class="clovs-label" for="forgot-password-email">البريد الإلكتروني<input id="forgot-password-email" type="email" autocomplete="email" dir="ltr" required class="clovs-input" placeholder="email@example.com"></label><p id="forgot-password-status" class="text-xs text-slate-500" role="status" aria-live="polite"></p></div>`;
+      const emailInput = document.getElementById('forgot-password-email');
+      if (emailInput) emailInput.value = currentEmail.includes('@') ? currentEmail : '';
+      document.getElementById('modal-actions').innerHTML = `<button id="forgot-password-submit" class="clovs-primary-button" onclick="clovsSendPasswordReset()">إرسال رابط الاستعادة</button><button class="clovs-soft-button" onclick="closeModal()">إلغاء</button>`;
+      if (!currentEmail.includes('@')) emailInput?.focus();
+    }
+
+    async function clovsSendPasswordReset() {
+      const input = document.getElementById('forgot-password-email');
+      const status = document.getElementById('forgot-password-status');
+      const button = document.getElementById('forgot-password-submit');
+      const email = String(input?.value || '').trim().toLowerCase();
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        if (status) status.textContent = 'اكتب بريدًا إلكترونيًا صحيحًا.';
+        input?.focus();
+        return;
+      }
+      if (button?.disabled) return;
+      if (button) { button.disabled = true; button.textContent = 'جاري إرسال الرسالة...'; }
+      if (status) status.textContent = 'جارٍ طلب رابط إعادة التعيين من Firebase...';
+      try {
+        firebaseAuth.languageCode = 'ar';
+        await firebaseAuth.sendPasswordResetEmail(email);
+        if (status) status.textContent = 'تم طلب إرسال الرسالة. راجع الوارد والرسائل غير المرغوب فيها والتحديثات.';
+        showToast('لو البريد مسجل، هيوصلك رابط إعادة تعيين كلمة المرور. راجع Spam كمان.');
+      } catch (error) {
+        console.error('[Clovs Firebase] password reset request failed:', error);
+        const code = String(error?.code || '');
+        const message = code === 'auth/invalid-email' ? 'صيغة البريد الإلكتروني غير صحيحة.'
+          : code === 'auth/user-not-found' ? 'لا يوجد حساب مسجل بهذا البريد الإلكتروني.'
+          : code === 'auth/too-many-requests' ? 'تم طلب رسائل كثيرة مؤخرًا. انتظر قليلًا ثم حاول مرة أخرى.'
+          : code === 'auth/operation-not-allowed' ? 'إرسال إعادة تعيين كلمة المرور غير مفعّل في إعدادات Firebase Authentication.'
+          : code === 'auth/unauthorized-continue-uri' || code === 'auth/invalid-continue-uri' ? 'رابط الاستعادة غير مسموح به في Firebase. راجع النطاقات المصرح بها وقالب الرسالة.'
+          : `تعذر طلب الرسالة (${code || 'خطأ اتصال'}). تحقق من اتصال Firebase ثم حاول مرة أخرى.`;
+        if (status) status.textContent = message;
+        showToast(message, 'error');
+      } finally {
+        if (button?.isConnected) { button.disabled = false; button.textContent = 'إرسال رابط الاستعادة'; }
+      }
     }
 
     async function handleLogin(e) {
@@ -5900,9 +5950,10 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
       const email = String(marketer?.email || '').trim();
       if (!email) { showToast('لا يوجد بريد إلكتروني صالح لهذا المسوق.', 'error'); return; }
       try {
+        firebaseAuth.languageCode = 'ar';
         await firebaseAuth.sendPasswordResetEmail(email);
         closeModal();
-        showToast('تم إرسال رابط إعادة تعيين كلمة المرور إلى بريد المسوق.');
+        showToast('تم طلب إرسال رابط إعادة تعيين كلمة المرور إلى بريد المسوق. راجع الوارد والرسائل غير المرغوب فيها.');
       } catch (error) {
         console.error('[Clovs Firebase] reset email failed:', error);
         showToast(`تعذر إرسال رابط إعادة التعيين: ${String(error?.message || error).slice(0,100)}`, 'error');
@@ -7105,7 +7156,7 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
     function renderClovsIntegrations(){if(appState.currentUser?.role!=='super_admin')return;const config=clovsV11.config;document.getElementById('view-clovs-integrations').innerHTML=`<div class="clovs-panel"><h2 class="text-2xl font-black">إعدادات الربط</h2><p>ربط خدمة الذكاء الاصطناعي وإشعارات تيليجرام.</p></div><form onsubmit="saveClovsIntegration(event)" class="clovs-panel space-y-4"><label class="clovs-label">رابط الخدمة<input id="clovs-endpoint" class="clovs-input" dir="ltr" placeholder="https://script.google.com/macros/s/.../exec" value="${escapeHtml(config.serviceUrl||'')}"></label><label class="clovs-label">عبارة الطلب في الإعلان<input id="clovs-shipping-message" class="clovs-input" maxlength="180" value="${escapeHtml(config.shippingMessage||'للطلب ابعتلنا على رسايل الصفحة أو سيب تعليق، وهنرد عليك في أسرع وقت.')}"></label><div class="flex flex-wrap gap-3"><button class="clovs-primary-button">حفظ الإعدادات</button><button class="clovs-soft-button" type="button" onclick="testClovsIntegration()">فحص الخدمة</button><button class="clovs-soft-button" type="button" onclick="clovsTestTelegram()">إرسال رسالة اختبار لتيليجرام</button></div><p id="clovs-integration-status" role="status"></p></form><div class="clovs-panel"><h3>تشغيل استقبال الأوردرات</h3><p>يحتاج Apps Script إلى إعداد TELEGRAM_BOT_TOKEN وTELEGRAM_CHAT_ID وبيانات حساب خدمة Firebase. شغّل installClovs مرة واحدة بعد نشر الخدمة. اختبار تيليجرام أعلاه يتحقق من الإرسال ومن وجود المشغّل.</p></div>`;}
     async function saveClovsIntegration(event){event.preventDefault();if(firebaseAuth.currentUser?.uid!==FIREBASE_ADMIN_UID)return;const serviceUrl=document.getElementById('clovs-endpoint').value.trim(),shippingMessage=document.getElementById('clovs-shipping-message').value.trim();if(!/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(serviceUrl)||!shippingMessage)return showToast('اكتب رابط /exec صحيح وعبارة الشحن','error');try{await setAndVerifyFirebase(firebaseDB.ref('siteSettings/clovsV11'),{serviceUrl,shippingMessage,version:17,updatedAt:Date.now()},s=>s&&s.serviceUrl===serviceUrl&&s.shippingMessage===shippingMessage,'إعدادات التحديث');clovsV11.config={serviceUrl,shippingMessage,version:17};showToast('تم حفظ الربط');}catch(e){showToast('تعذر حفظ الربط. راجع قواعد Firebase.','error');}}
     async function testClovsIntegration(){const el=document.getElementById('clovs-integration-status');el.textContent='جاري الاختبار...';try{const r=await clovsService('health');el.textContent=`الاتصال ناجح · تيليجرام: ${r.telegramReady?'يستقبل':'يحتاج ضبط'} · متابعة الطلبات: ${r.triggerInstalled?'مفعلة':'غير مفعلة؛ شغّل installClovs'} · AI: ${r.aiReady?'مفعّل':(r.aiMessage||'يحتاج إعداد')}`;}catch(e){el.textContent=e.message;}}
-    function clovsDownloadBackend(){clovsDownload('CLOVS-v17-Service.gs',document.getElementById('clovs-backend-source').textContent);}
+    function clovsDownloadBackend(){clovsDownload('CLOVS-v21-Service-Image-Fidelity.gs',document.getElementById('clovs-backend-source').textContent);}
     function clovsDownloadRules(){clovsDownload('CLOVS-v17-Firebase-rules.json',document.getElementById('clovs-rules-source').textContent);}
 
     // v16 storefront, customer cart isolation and administrator tools.
@@ -7208,7 +7259,7 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
     function renderAdvertisingAdmin(){if(!directAdminAllowed())return;document.getElementById('view-admin-advertising').innerHTML=`<div class="clovs-panel"><h2 class="text-2xl font-black">المساحات الإعلانية</h2><p>تحكم في إعلانين مستقلين على الرئيسية. لكل مساحة صورة ورابط ومقاس منفصل للكمبيوتر والموبايل.</p></div>${clovsAdCard('bottomAd','المساحة الأولى','بعد أحدث المنتجات مباشرة وقبل نهاية الصفحة.',clovsBottomAd)}${clovsAdCard('secondAd','المساحة الثانية','بعد قسم العروض وقبل مميزات الرئيسية.',clovsSecondAd)}`;}
     async function clovsSaveAd(key){if(!directAdminAllowed()||clovsAdBusy||!['bottomAd','secondAd'].includes(key))return;const status=document.getElementById('ad-'+key+'-status'),form=status?.closest('section');if(!form)return;clovsAdBusy=true;form.querySelectorAll('button').forEach(b=>b.disabled=true);try{let image=document.getElementById('ad-'+key+'-image-url').value.trim(),link=document.getElementById('ad-'+key+'-link-url').value.trim();const file=document.getElementById('ad-'+key+'-image-file').files[0];if((image&&!clovsSafeLink(image))||(link&&!clovsSafeLink(link)))throw new Error('استخدم روابط HTTPS صحيحة');if(file){if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>10*1024*1024)throw new Error('ارفع PNG أو JPG أو WebP بحجم أقل من 10 ميجا');status.textContent='جاري رفع الصورة...';image=await uploadImageToCloudinary(file,'clovs/advertising');}const num=id=>Number(document.getElementById('ad-'+key+'-'+id).value),data={imageUrl:image?clovsSafeLink(image):'',linkUrl:link?clovsSafeLink(link):'',desktopWidth:num('desktop-width'),mobileWidth:num('mobile-width'),desktopHeight:num('desktop-height'),mobileHeight:num('mobile-height'),updatedAt:Date.now(),updatedBy:firebaseAuth.currentUser.uid};const d=clovsAdDimensions(data);if(data.desktopWidth!==d.desktopWidth||data.mobileWidth!==d.mobileWidth||data.desktopHeight!==d.desktopHeight||data.mobileHeight!==d.mobileHeight)throw new Error('راجع مقاسات الإعلان: عرض الكمبيوتر 50–100%، عرض الموبايل 75–100%، وارتفاع الكمبيوتر 100–360 والموبايل 80–240px.');status.textContent='جاري الحفظ...';await setAndVerifyFirebase(firebaseDB.ref('siteSettings/'+key),data,s=>s&&s.imageUrl===data.imageUrl&&s.linkUrl===data.linkUrl&&s.desktopWidth===data.desktopWidth&&s.mobileWidth===data.mobileWidth&&s.desktopHeight===data.desktopHeight&&s.mobileHeight===data.mobileHeight,'المساحة الإعلانية');if(key==='bottomAd')clovsBottomAd=data;else clovsSecondAd=data;clovsRenderAds();status.textContent='تم حفظ الإعلان والمقاسات';showToast('تم حفظ المساحة الإعلانية');}catch(err){status.textContent=err.code==='PERMISSION_DENIED'?'انشر قواعد Firebase v17.1 لتفعيل صلاحيات المقاسات والمساحة الثانية.':err.message;showToast(status.textContent,'error');}finally{clovsAdBusy=false;if(form.isConnected)form.querySelectorAll('button').forEach(b=>b.disabled=false);}}
     async function clovsClearAd(key){if(!directAdminAllowed()||clovsAdBusy||!['bottomAd','secondAd'].includes(key))return;clovsAdBusy=true;try{const old=clovsAdDimensions(key==='bottomAd'?clovsBottomAd:clovsSecondAd),data={imageUrl:'',linkUrl:'',desktopWidth:old.desktopWidth,mobileWidth:old.mobileWidth,desktopHeight:old.desktopHeight,mobileHeight:old.mobileHeight,updatedAt:Date.now(),updatedBy:firebaseAuth.currentUser.uid};await setAndVerifyFirebase(firebaseDB.ref('siteSettings/'+key),data,s=>s&&s.imageUrl===''&&s.linkUrl==='','المساحة الإعلانية');if(key==='bottomAd')clovsBottomAd=data;else clovsSecondAd=data;clovsRenderAds();renderAdvertisingAdmin();showToast('تم مسح الإعلان مع الاحتفاظ بالمقاسات');}catch(e){showToast('تعذر المسح. انشر قواعد Firebase v17.1 ثم أعد المحاولة.','error');}finally{clovsAdBusy=false;}}
-    function renderAdminMarketers(){if(!directAdminAllowed())return;const list=appState.usersList.filter(u=>u.firebaseMarketer);document.getElementById('view-admin-marketers').innerHTML=`<div class="clovs-panel"><h2 class="text-2xl font-black">إدارة حسابات المسوقين</h2><p>تقدر تحمي حسابات معينة من الحذف نهائيًا. الحساب المحمي يظل متاحًا للحظر وإلغاء الحظر، ولا يظهر له زر الحذف.</p></div><div class="clovs-panel overflow-x-auto"><table class="w-full text-right text-sm"><thead><tr class="border-b"><th class="p-3">المسوق</th><th class="p-3">الحالة</th><th class="p-3">الرصيد</th><th class="p-3">التحكم</th></tr></thead><tbody>${list.map(u=>`<tr class="border-b border-slate-100"><td class="p-3"><strong>${escapeHtml(u.name||u.username||'مسوق')}</strong><small class="block text-slate-500">${escapeHtml(u.email||'')}<br>${escapeHtml(u.phone||'')}</small></td><td class="p-3">${u.status==='approved'?'نشط':'محظور'}${u.protectedFromDeletion?'<span class="clovs-pill mr-2">محمي من الحذف</span>':''}</td><td class="p-3 font-bold">${money(u.balance||0)} ج.م</td><td class="p-3"><div class="flex flex-wrap gap-2"><button class="clovs-soft-button" onclick="editUserModal('${u.id}')">تعديل</button><button class="clovs-soft-button" onclick="clovsConfirmMarketer('${u.uid}','${u.status==='approved'?'block':'unblock'}')">${u.status==='approved'?'حظر':'إلغاء الحظر'}</button><button class="clovs-soft-button" onclick="clovsConfirmMarketer('${u.uid}','${u.protectedFromDeletion?'unprotect':'protect'}')">${u.protectedFromDeletion?'إلغاء حماية الحذف':'حماية من الحذف'}</button>${u.protectedFromDeletion?'':`<button class="clovs-soft-button text-rose-600" onclick="clovsConfirmMarketer('${u.uid}','delete')">حذف الحساب</button>`}</div></td></tr>`).join('')||'<tr><td colspan="4" class="p-6 text-center text-slate-500">لا توجد حسابات مسوقين محمّلة حالياً.</td></tr>'}</tbody></table></div><div class="clovs-panel"><h3>تحديث خدمة الحسابات والصور</h3><p>استبدل Code.gs بالكود التالي، وحدّث النسخة المنشورة من Manage deployments. هذا التحديث مطلوب لتفعيل حماية الحسابات وتوليد الصور.</p><button class="clovs-primary-button mt-3" onclick="clovsDownloadBackend()">تحميل خدمة CLOVS v17</button><button class="clovs-soft-button mt-3 mr-2" onclick="clovsDownloadRules()">تحميل قواعد التحديث</button></div>`;}
+    function renderAdminMarketers(){if(!directAdminAllowed())return;const list=appState.usersList.filter(u=>u.firebaseMarketer);document.getElementById('view-admin-marketers').innerHTML=`<div class="clovs-panel"><h2 class="text-2xl font-black">إدارة حسابات المسوقين</h2><p>تقدر تحمي حسابات معينة من الحذف نهائيًا. الحساب المحمي يظل متاحًا للحظر وإلغاء الحظر، ولا يظهر له زر الحذف.</p></div><div class="clovs-panel overflow-x-auto"><table class="w-full text-right text-sm"><thead><tr class="border-b"><th class="p-3">المسوق</th><th class="p-3">الحالة</th><th class="p-3">الرصيد</th><th class="p-3">التحكم</th></tr></thead><tbody>${list.map(u=>`<tr class="border-b border-slate-100"><td class="p-3"><strong>${escapeHtml(u.name||u.username||'مسوق')}</strong><small class="block text-slate-500">${escapeHtml(u.email||'')}<br>${escapeHtml(u.phone||'')}</small></td><td class="p-3">${u.status==='approved'?'نشط':'محظور'}${u.protectedFromDeletion?'<span class="clovs-pill mr-2">محمي من الحذف</span>':''}</td><td class="p-3 font-bold">${money(u.balance||0)} ج.م</td><td class="p-3"><div class="flex flex-wrap gap-2"><button class="clovs-soft-button" onclick="editUserModal('${u.id}')">تعديل</button><button class="clovs-soft-button" onclick="clovsConfirmMarketer('${u.uid}','${u.status==='approved'?'block':'unblock'}')">${u.status==='approved'?'حظر':'إلغاء الحظر'}</button><button class="clovs-soft-button" onclick="clovsConfirmMarketer('${u.uid}','${u.protectedFromDeletion?'unprotect':'protect'}')">${u.protectedFromDeletion?'إلغاء حماية الحذف':'حماية من الحذف'}</button>${u.protectedFromDeletion?'':`<button class="clovs-soft-button text-rose-600" onclick="clovsConfirmMarketer('${u.uid}','delete')">حذف الحساب</button>`}</div></td></tr>`).join('')||'<tr><td colspan="4" class="p-6 text-center text-slate-500">لا توجد حسابات مسوقين محمّلة حالياً.</td></tr>'}</tbody></table></div><div class="clovs-panel"><h3>تحديث خدمة الحسابات والصور</h3><p>استبدل Code.gs بالكود التالي، وحدّث النسخة المنشورة من Manage deployments. هذا التحديث مطلوب لتفعيل حماية الحسابات وتوليد الصور.</p><button class="clovs-primary-button mt-3" onclick="clovsDownloadBackend()">تحميل خدمة CLOVS v21</button><button class="clovs-soft-button mt-3 mr-2" onclick="clovsDownloadRules()">تحميل قواعد التحديث</button></div>`;}
     function clovsConfirmMarketer(uid,operation){if(!directAdminAllowed())return;const u=appState.usersList.find(x=>x.uid===uid&&x.firebaseMarketer);if(!u)return;const titles={block:'حظر المسوق',unblock:'إلغاء الحظر',delete:'حذف حساب المسوق',protect:'حماية الحساب من الحذف',unprotect:'إلغاء حماية الحساب'};if(operation==='delete'&&u.protectedFromDeletion)return showToast('الحساب محمي من الحذف','error');openModal(titles[operation],operation==='delete'?`سيتم حذف حساب ${u.name} من تسجيل الدخول وإزالة ملفه العام. يظل سجل الأوردرات والرصيد محفوظًا لدى الإدارة. هذا الإجراء لا يمكن التراجع عنه.`:`${titles[operation]}: ${u.name}؟`,'fa-user-lock',`<button id="marketer-operation-confirm" class="clovs-primary-button" onclick="clovsManageMarketer('${uid}','${operation}')">تأكيد</button><button class="clovs-soft-button" onclick="closeModal()">إلغاء</button>`);}
     async function clovsManageMarketer(uid,operation){if(!directAdminAllowed()||!['block','unblock','delete','protect','unprotect'].includes(operation)||!appState.usersList.some(u=>u.uid===uid&&u.firebaseMarketer))return;const btn=document.getElementById('marketer-operation-confirm');if(btn)btn.disabled=true;try{if(operation==='delete'){if(!clovsV11.config.serviceUrl)throw new Error('اربط خدمة CLOVS v17 من إعداد الخدمة أولًا');await clovsService('manageMarketer',{uid,operation});appState.usersList=appState.usersList.filter(u=>u.uid!==uid);}
       else if(clovsV11.config.serviceUrl){await clovsService('manageMarketer',{uid,operation});const u=appState.usersList.find(x=>x.uid===uid);if(u&&operation==='protect')u.protectedFromDeletion=true;if(u&&operation==='unprotect')u.protectedFromDeletion=false;}
@@ -7217,7 +7268,7 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
       closeModal();renderAdminMarketers();showToast(operation==='delete'?'تم حذف الحساب':operation==='block'?'تم حظر المسوق':operation==='unblock'?'تم إلغاء الحظر':operation==='protect'?'تمت حماية الحساب':'تم إلغاء حماية الحساب');
     }catch(e){showToast(e.message.includes('طلب غير معروف')?'حدّث كود خدمة CLOVS إلى v17 ثم أعد المحاولة':e.message,'error');if(btn)btn.disabled=false;}}
     // Browser cache retains only public generated image URLs, never customer data.
-    function clovsStudioCacheKey(data){return 'clovs_ai_images_scene_v2_'+firebaseAuth.currentUser?.uid+'_'+data.productId+'_'+encodeURIComponent(data.pageName)+'_'+data.price;}
+    function clovsStudioCacheKey(data){return 'clovs_ai_images_product_lock_v3_'+firebaseAuth.currentUser?.uid+'_'+data.productId+'_'+encodeURIComponent(data.pageName)+'_'+data.price;}
     function clovsSaveImageSession(data){try{const s=clovsV11.studio;localStorage.setItem(clovsStudioCacheKey(data),JSON.stringify({batchId:s.batchId,images:s.images,t:Date.now()}));}catch(_){} }
     async function clovsGenerateImages(){const s=clovsV11.studio;if(s.busy)return;const uid=firebaseAuth.currentUser?.uid;try{const data=clovsStudioPayload();if(!clovsV11.config.serviceUrl)throw new Error('الصور بالذكاء الاصطناعي تحتاج تفعيل خدمة CLOVS v17 من الإدارة');if(!s.batchId){try{const old=JSON.parse(localStorage.getItem(clovsStudioCacheKey(data))||'null');if(old&&/^[a-f0-9]{32}$/.test(old.batchId)){s.batchId=old.batchId;s.images=(old.images||[]).slice(0,4);}}catch(_){} }
       if(!s.batchId)s.batchId=Array.from(crypto.getRandomValues(new Uint8Array(16)),v=>v.toString(16).padStart(2,'0')).join('');
@@ -7342,13 +7393,15 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
     }
     async function clovsSaveCover(e){e.preventDefault();if(!directAdminAllowed())return;const form=e.target,status=document.getElementById('cover-status');form.querySelectorAll('button').forEach(b=>b.disabled=true);try{status.textContent='جاري حفظ الغلاف...';const sel=document.getElementById('cover-target'),o=sel.selectedOptions[0],url=await clovsUploadedImage(document.getElementById('cover-file').files[0],document.getElementById('cover-url').value.trim(),'clovs/covers');if(!url)throw new Error('اختار صورة أولاً');const data={kind:o.dataset.kind,name:o.dataset.name,imageUrl:url,updatedAt:Date.now()};await setAndVerifyFirebase(firebaseDB.ref('siteSettings/covers/'+sel.value),data,s=>s?.imageUrl===url,'الغلاف');status.textContent='تم حفظ الغلاف';showToast('تم حفظ الغلاف');}catch(err){status.textContent=err.message;showToast(err.message,'error');}finally{form.querySelectorAll('button').forEach(b=>b.disabled=false);}}
     async function clovsDeleteCover(){if(!directAdminAllowed())return;try{await firebaseDB.ref('siteSettings/covers/'+document.getElementById('cover-target').value).remove();clovsPreviewCover();showToast('تمت إزالة الغلاف');}catch(e){showToast('تعذر إزالة الغلاف','error');}}
+    let clovsStoreManagerProductIds = new Set();
+    const CLOVS_STORE_PRODUCT_LIMIT = 40;
     function clovsStoreLink(slug){const url=new URL(location.href);url.search='';url.hash='';url.searchParams.set('store',String(slug||'').normalize('NFKC').trim().toLowerCase());return url.href;}
     async function clovsCopyStoreLink(){try{const slug=document.getElementById('my-store-link')?.dataset.slug||clovsStore?.slug;if(!slug)return;await navigator.clipboard.writeText(clovsStoreLink(slug));showToast('تم نسخ رابط المتجر');}catch(e){showToast('انسخ الرابط من الخانة','info');}}
     async function renderMarketerStore(initialStore){
       const uid=firebaseAuth.currentUser?.uid;if(appState.currentUser?.role!=='marketer'||!uid)return;
       const el=document.getElementById('view-marketer-store');el.innerHTML='<div class="clovs-panel">جاري تحميل متجرك...</div>';
-      try{const s=initialStore||(await firebaseDB.ref('marketerStores/'+uid).once('value')).val()||{};if(firebaseAuth.currentUser?.uid!==uid||appState.currentView!=='marketer-store')return;const items=Object.values(s.products||{});
-      el.innerHTML=`<div class="clovs-studio-hero"><p class="clovs-eyebrow">متجرك · بدعم CLOVS</p><h2>${escapeHtml(s.name||'ابدأ متجرك الخاص')}</h2><p>اختار منتجات CLOVS وحدد أسعار البيع. طلبات متجرك تُسجّل باسمك وعمولتك تُضاف عند التسليم.</p></div><form class="clovs-panel space-y-4" onsubmit="clovsSaveStore(event)"><div class="grid sm:grid-cols-2 gap-4"><label class="clovs-label">اسم المتجر<input required id="store-name" maxlength="80" minlength="2" class="clovs-input" value="${escapeHtml(s.name||'')}"></label><label class="clovs-label">اسم رابط متجرك<input required id="store-slug" maxlength="48" minlength="3" class="clovs-input" value="${escapeHtml(s.slug||'')}" placeholder="بيتك-أحلى أو my-store"><small>حروف عربية أو إنجليزية وأرقام وشرطة. تغيير الاسم يغيّر رابط متجرك.</small></label></div><label class="clovs-label">نبذة المتجر<textarea id="store-bio" maxlength="400" class="clovs-input">${escapeHtml(s.bio||'')}</textarea></label><div class="grid sm:grid-cols-2 gap-4"><label class="clovs-label">اللوجو<input id="store-logo" type="file" accept="image/png,image/jpeg,image/webp" class="clovs-input"><input id="store-logo-url" type="url" class="clovs-input" value="${escapeHtml(s.logoUrl||'')}" placeholder="أو رابط اللوجو">${s.logoUrl?`<img class="clovs-store-logo mt-2" alt="لوجو المتجر" src="${escapeHtml(clovsSafeLink(s.logoUrl))}">`:''}</label><label class="clovs-label">الكفر<input id="store-cover" type="file" accept="image/png,image/jpeg,image/webp" class="clovs-input"><input id="store-cover-url" type="url" class="clovs-input" value="${escapeHtml(s.coverUrl||'')}" placeholder="أو رابط الكفر">${s.coverUrl?`<img class="clovs-page-cover mt-2" alt="كفر المتجر" src="${escapeHtml(clovsSafeLink(s.coverUrl))}">`:''}</label></div><label class="text-sm flex gap-2"><input id="store-enabled" type="checkbox" ${s.enabled!==false?'checked':''}> نشر المتجر وإتاحة الطلبات</label><button type="submit" class="clovs-primary-button">حفظ المتجر</button><p id="store-save-status" role="status"></p></form>${s.slug?`<div class="clovs-panel"><h3>رابط متجرك</h3><input id="my-store-link" data-slug="${escapeHtml(s.slug)}" class="clovs-input" readonly dir="ltr" value="${escapeHtml(clovsStoreLink(s.slug))}"><div class="flex flex-wrap gap-3 mt-3"><button onclick="clovsCopyStoreLink()" class="clovs-soft-button">نسخ الرابط</button><a class="clovs-primary-button" href="${escapeHtml(clovsStoreLink(s.slug))}" target="_blank" rel="noopener">معاينة المتجر</a></div></div><div class="clovs-panel"><div class="flex justify-between gap-3"><h3>منتجات المتجر (${items.length})</h3><button onclick="clovsPickStoreProducts()" class="clovs-primary-button">+ أضف المنتجات</button></div><div id="my-store-products" class="space-y-3 mt-4">جاري تحميل المنتجات...</div></div>`:'<div class="clovs-policy">احفظ اسم متجرك أولاً، وبعدها أضف المنتجات والأسعار.</div>'}`;
+      try{const s=initialStore||(await firebaseDB.ref('marketerStores/'+uid).once('value')).val()||{};if(firebaseAuth.currentUser?.uid!==uid||appState.currentView!=='marketer-store')return;const items=Object.values(s.products||{});clovsStoreManagerProductIds=new Set(items.map(item=>String(item.productId||'')).filter(Boolean));window.clovsStoreManagerPrices=Object.fromEntries(items.map(item=>[String(item.productId||''),Number(item.price)||0]).filter(([id])=>id));
+      el.innerHTML=`<div class="clovs-studio-hero"><p class="clovs-eyebrow">متجرك · بدعم CLOVS</p><h2>${escapeHtml(s.name||'ابدأ متجرك الخاص')}</h2><p>اختار منتجات CLOVS وحدد أسعار البيع. طلبات متجرك تُسجّل باسمك وعمولتك تُضاف عند التسليم.</p></div><form class="clovs-panel space-y-4" onsubmit="clovsSaveStore(event)"><div class="grid sm:grid-cols-2 gap-4"><label class="clovs-label">اسم المتجر<input required id="store-name" maxlength="80" minlength="2" class="clovs-input" value="${escapeHtml(s.name||'')}"></label><label class="clovs-label">اسم رابط متجرك<input required id="store-slug" maxlength="48" minlength="3" class="clovs-input" value="${escapeHtml(s.slug||'')}" placeholder="بيتك-أحلى أو my-store"><small>حروف عربية أو إنجليزية وأرقام وشرطة. تغيير الاسم يغيّر رابط متجرك.</small></label></div><label class="clovs-label">نبذة المتجر<textarea id="store-bio" maxlength="400" class="clovs-input">${escapeHtml(s.bio||'')}</textarea></label><div class="grid sm:grid-cols-2 gap-4"><label class="clovs-label">اللوجو<input id="store-logo" type="file" accept="image/png,image/jpeg,image/webp" class="clovs-input"><input id="store-logo-url" type="url" class="clovs-input" value="${escapeHtml(s.logoUrl||'')}" placeholder="أو رابط اللوجو">${s.logoUrl?`<img class="clovs-store-logo mt-2" alt="لوجو المتجر" src="${escapeHtml(clovsSafeLink(s.logoUrl))}">`:''}</label><label class="clovs-label">الكفر<input id="store-cover" type="file" accept="image/png,image/jpeg,image/webp" class="clovs-input"><input id="store-cover-url" type="url" class="clovs-input" value="${escapeHtml(s.coverUrl||'')}" placeholder="أو رابط الكفر">${s.coverUrl?`<img class="clovs-page-cover mt-2" alt="كفر المتجر" src="${escapeHtml(clovsSafeLink(s.coverUrl))}">`:''}</label></div><label class="text-sm flex gap-2"><input id="store-enabled" type="checkbox" ${s.enabled!==false?'checked':''}> نشر المتجر وإتاحة الطلبات</label><button type="submit" class="clovs-primary-button">حفظ المتجر</button><p id="store-save-status" role="status"></p></form>${s.slug?`<div class="clovs-panel"><h3>رابط متجرك</h3><input id="my-store-link" data-slug="${escapeHtml(s.slug)}" class="clovs-input" readonly dir="ltr" value="${escapeHtml(clovsStoreLink(s.slug))}"><div class="flex flex-wrap gap-3 mt-3"><button onclick="clovsCopyStoreLink()" class="clovs-soft-button">نسخ الرابط</button><a class="clovs-primary-button" href="${escapeHtml(clovsStoreLink(s.slug))}" target="_blank" rel="noopener">معاينة المتجر</a></div></div><div class="clovs-panel"><div class="flex justify-between gap-3"><h3>منتجات المتجر (${items.length})</h3><button onclick="clovsPickStoreProducts()" class="clovs-primary-button" ${items.length>=CLOVS_STORE_PRODUCT_LIMIT?'disabled title="وصلت للحد الأقصى"':''}>+ أضف المنتجات (${items.length}/${CLOVS_STORE_PRODUCT_LIMIT})</button></div><div id="my-store-products" class="space-y-3 mt-4">جاري تحميل المنتجات...</div></div>`:'<div class="clovs-policy">احفظ اسم متجرك أولاً، وبعدها أضف المنتجات والأسعار.</div>'}`;
       if(s.slug){const products=await Promise.all(items.map(async i=>{const p=await productsRef.child(i.productId).once('value');return {...i,product:p.val()};}));if(firebaseAuth.currentUser?.uid!==uid||appState.currentView!=='marketer-store')return;document.getElementById('my-store-products').innerHTML=products.map(i=>`<div class="clovs-store-manager-item"><img src="${escapeHtml(safeImageUrl(i.product?productMainImage(i.product):''))}" alt=""><div><strong>${escapeHtml(i.product?.name||'منتج تم حذفه')}</strong><small>${money(i.price)} ج.م ${i.product&&i.price<getProductPrice(i.product)?'· يحتاج تحديث السعر':''}</small></div><button class="clovs-soft-button" onclick="clovsEditStoreProduct('${escapeHtml(i.productId)}',${Number(i.price)||0})">تعديل السعر</button><button class="clovs-soft-button text-rose-600" onclick="clovsRemoveStoreProduct('${escapeHtml(i.productId)}')">إزالة</button></div>`).join('')||'<p class="text-slate-500">اضغط أضف المنتجات لبدء تجهيز متجرك.</p>';}
       }catch(e){el.innerHTML='<div class="clovs-panel">تعذر تحميل المتجر. تأكد من تسجيل الدخول كمسوق معتمد ونشر قواعد Firebase v17، ثم أعد المحاولة.</div>';showToast(e.message,'error');}
     }
@@ -7357,7 +7410,12 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
       openModal('أضف المنتجات','');document.getElementById('modal-message').innerHTML='<input id="store-product-search" class="clovs-input" placeholder="ابحث باسم أو كود المنتج" oninput="clovsSearchStoreProducts()"><div id="store-product-results" class="space-y-2 mt-4 max-h-96 overflow-y-auto">جاري تحميل الكتالوج...</div>';
       try{const snap=await productCatalogRef.once('value');clovsV11.catalog=Object.entries(snap.val()||{}).filter(([id])=>/^[A-Za-z0-9_-]{1,128}$/.test(id)).map(([id,p])=>({...p,id}));clovsV11.catalogLoaded=true;clovsSearchStoreProducts();}catch(e){showToast('تعذر تحميل المنتجات','error');}
     }
-    function clovsSearchStoreProducts(){const q=document.getElementById('store-product-search')?.value.trim().toLowerCase()||'',el=document.getElementById('store-product-results');if(!el)return;el.innerHTML=clovsV11.catalog.filter(p=>(p.name+' '+p.id).toLowerCase().includes(q)).slice(0,50).map(p=>`<button class="clovs-search-product" onclick="clovsEditStoreProduct('${escapeHtml(p.id)}',0)"><img src="${escapeHtml(safeImageUrl(p.image||p.thumbnail||''))}" alt=""><span><strong>${escapeHtml(p.name)}</strong><small>سعر CLOVS: ${money(getProductPrice(p))} ج.م</small></span><i class="fa-solid fa-plus"></i></button>`).join('')||'<p>لا توجد نتائج</p>';}
+    function clovsSearchStoreProducts(){
+      const q=document.getElementById('store-product-search')?.value.trim().toLowerCase()||'',el=document.getElementById('store-product-results');if(!el)return;
+      const atLimit=clovsStoreManagerProductIds.size>=CLOVS_STORE_PRODUCT_LIMIT;
+      el.innerHTML=`<p class="text-xs text-slate-500 mb-3">${clovsStoreManagerProductIds.size}/${CLOVS_STORE_PRODUCT_LIMIT} منتج في متجرك. ${atLimit?'احذف منتجًا قبل إضافة منتج جديد.':'تقدر تضيف حتى 40 منتجًا.'}</p>`+
+        (clovsV11.catalog.filter(p=>(p.name+' '+p.id).toLowerCase().includes(q)).slice(0,50).map(p=>{const exists=clovsStoreManagerProductIds.has(String(p.id));return `<button class="clovs-search-product" ${!exists&&atLimit?'disabled title="وصلت للحد الأقصى 40 منتجًا"':''} onclick="clovsEditStoreProduct('${escapeHtml(p.id)}',${exists?'(Number((window.clovsStoreManagerPrices||{})[\''+escapeHtml(p.id)+'\'])||0)':'0'})"><img src="${escapeHtml(safeImageUrl(p.image||p.thumbnail||''))}" alt=""><span><strong>${escapeHtml(p.name)}</strong><small>${exists?'مضاف · تعديل السعر':'سعر CLOVS: '+money(getProductPrice(p))+' ج.م'}</small></span><i class="fa-solid fa-${exists?'pen':'plus'}"></i></button>`;}).join('')||'<p>لا توجد نتائج</p>');
+    }
     async function clovsEditStoreProduct(id,price){try{const snap=await productsRef.child(id).once('value');if(!snap.exists())throw new Error('المنتج غير متاح');const p=snap.val(),base=getProductPrice(p);openModal('سعر البيع في متجرك','');document.getElementById('modal-message').innerHTML=`<strong>${escapeHtml(p.name)}</strong><p class="mt-2">سعر CLOVS: ${money(base)} ج.م. الفرق بين سعر بيعك وسعر CLOVS هو عمولتك لكل قطعة.</p><label class="clovs-label mt-3">سعر البيع<input id="store-product-price" type="number" min="${base}" max="1000000" step="0.01" class="clovs-input" value="${Math.max(Number(price)||base,base)}"></label>`;document.getElementById('modal-actions').innerHTML=`<button id="store-product-save" class="clovs-primary-button" onclick="clovsSaveStoreProduct('${escapeHtml(id)}')">إضافة / حفظ المنتج</button><button class="clovs-soft-button" onclick="closeModal()">إلغاء</button>`;}catch(e){showToast(e.message,'error');}}
     async function clovsSaveStoreProduct(id){const b=document.getElementById('store-product-save');if(b?.disabled)return;b.disabled=true;try{await clovsService('saveStoreProduct',{productId:id,price:Number(document.getElementById('store-product-price').value)});closeModal();showToast('تم حفظ المنتج في متجرك');renderMarketerStore();}catch(e){showToast(e.message,'error');b.disabled=false;}}
     async function clovsRemoveStoreProduct(id){openModal('إزالة المنتج؟','سيتم إزالته من متجرك، وتظل الطلبات السابقة محفوظة.','fa-box',`<button class="clovs-primary-button" onclick="clovsConfirmRemoveStoreProduct('${escapeHtml(id)}',this)">إزالة</button><button class="clovs-soft-button" onclick="closeModal()">إلغاء</button>`);}
@@ -7416,7 +7474,7 @@ C_GOVERNORATES.forEach(gov=>{C_DEFAULT_SHIPPING[gov]=(gov==='القاهرة'||go
 const C_OWNER = 'zAeUYXEN3jS18kBC3QXZOVcedk12';
 function cProp(k) { return PropertiesService.getScriptProperties().getProperty(k) || ''; }
 function cJSON(v) { return ContentService.createTextOutput(JSON.stringify(v)).setMimeType(ContentService.MimeType.JSON); }
-function doGet() { return cJSON({success:true,service:'CLOVS v17 Cloudflare',version:17,aiProvider:'cloudflare',plans:{beginner:5,intermediate:20,pro:60},aiConfigured:!!(cProp('CLOUDFLARE_ACCOUNT_ID') && cProp('CLOUDFLARE_API_TOKEN'))}); }
+function doGet() { return cJSON({success:true,service:'CLOVS v21 Cloudflare',version:21,aiProvider:'cloudflare',plans:{beginner:5,intermediate:20,pro:60},aiConfigured:!!(cProp('CLOUDFLARE_ACCOUNT_ID') && cProp('CLOUDFLARE_API_TOKEN'))}); }
 function cFetch(url, options) {
   const r = UrlFetchApp.fetch(url, Object.assign({muteHttpExceptions:true}, options || {}));
   const code = r.getResponseCode(); let j = {}; try { j = JSON.parse(r.getContentText()); } catch (_) {}
@@ -7864,7 +7922,8 @@ function cManageMarketer(actor,data) {
   else{cAuthAdminRequest('update',uid,{disableUser:false});cDB('marketerProfiles/'+uid+'/status','put','approved');}
   return {success:true,status:op==='block'?'suspended':'approved'};
 }
-function cImageHistory(actor,data){const item=cProductData(data),job=cDB('clovsAIJobs/'+actor.uid+'/'+cKey(data.batchId));if(!job)return {success:true,images:[]};if(job.fingerprint!==[item.id,item.price,item.page].join('|'))throw new Error('جلسة صور مختلفة');return {success:true,images:job.images||[]};}
+function cImageFingerprint(item){return [item.id,item.price,item.page,'product-lock-bg-v3'].join('|');}
+function cImageHistory(actor,data){const item=cProductData(data),job=cDB('clovsAIJobs/'+actor.uid+'/'+cKey(data.batchId));if(!job)return {success:true,images:[]};if(job.fingerprint!==cImageFingerprint(item))throw new Error('جلسة صور مختلفة أو بإعدادات قديمة؛ ابدأ جلسة توليد جديدة');return {success:true,images:job.images||[]};}
 function cUploadAIAsset(file) {
   const r=UrlFetchApp.fetch('https://api.cloudinary.com/v1_1/ogrhqv8z/image/upload',{method:'post',payload:{upload_preset:'clovs_products',file:file},muteHttpExceptions:true});
   let body={};try{body=JSON.parse(r.getContentText());}catch(_){}
@@ -7878,7 +7937,8 @@ function cCloudinaryReference512(source) {
     // Cloudinary imports external images, keeping server downloads on the known image host.
     value=cUploadAIAsset(value);
   }
-  return value.replace('/image/upload/','/image/upload/w_448,h_448,c_limit,q_auto,f_png/');
+  // FLUX.2 klein-4b accepts reference images below 512x512. Use nearly the full safe resolution so fine product details survive.
+  return value.replace('/image/upload/','/image/upload/w_500,h_500,c_limit,q_auto,f_png/');
 }
 function cReferenceBlob(product) {
   const images=Array.isArray(product.images)?product.images:Object.values(product.images||{}),sources=[product.image].concat(images,[product.thumbnail]).filter(v=>typeof v==='string'&&v.trim()&&!/placehold\.co|placeholder/i.test(v));
@@ -7941,7 +8001,7 @@ function cImage(actor,data) {
   cCloudflareCredentials();
   const item=cProductData(data),index=Number(data.index),batch=cKey(data.batchId);cReserveAIProduct(actor,item.id);
   if(!Number.isInteger(index)||index<0||index>3)throw new Error('رقم الصورة غير صالح');
-  const fingerprint=[item.id,item.price,item.page,'scene-set-v2-no-text'].join('|'),path='clovsAIJobs/'+actor.uid+'/'+batch;
+  const fingerprint=cImageFingerprint(item),path='clovsAIJobs/'+actor.uid+'/'+batch;
   let already,pending;
   cLocked(()=>{const job=cDB(path)||{};if(job.fingerprint&&job.fingerprint!==fingerprint)throw new Error('بيانات جلسة التوليد تغيرت');if(job.images&&job.images[index]){already=job.images[index];return;}const busy=(job.running||{})[index];if(busy&&Date.now()-busy<360000)throw new Error('الصورة قيد التوليد، انتظر ثم أعد المحاولة');pending=(job.pendingImages||{})[index];const patch={fingerprint:fingerprint,productId:item.id,createdAt:job.createdAt||Date.now()};patch['running/'+index]=Date.now();cDB(path,'patch',patch);});
   if(already)return {success:true,url:already,idempotent:true,usage:cRecordProductUse(actor,item.id,'resume')};
@@ -7950,13 +8010,15 @@ function cImage(actor,data) {
     if(pending){image=cImageBytes(pending.base64);}
     else{
       const blob=cReferenceBlob(item.product);
-      const scenes=['IMAGE 1 — CATALOG CUTOUT: pure white #FFFFFF seamless studio background, one exact product only, centered front three-quarter view, full product visible, soft short grounding shadow, crisp even lighting, no hands, no people, no props.',
-      'IMAGE 2 — IN USE: show the exact product performing its real intended function in a believable moment of use, close-medium framing with clear action and natural human hands only when appropriate; bright natural daylight, lived-in setting, different camera angle from a catalog shot.',
-      'IMAGE 3 — REAL SETTING: show the exact product installed or placed where it is genuinely used, wide environmental composition with the whole product visible and contextual room or outdoor surroundings, warm daylight, no person interacting with it, distinctly different from the action photo.',
-      'IMAGE 4 — ADVERTISING HERO: premium studio campaign photograph on a rich deep emerald and complementary contrasting-color background, dramatic rim light, cinematic diagonal composition on a simple display plinth, refined shadows and subtle light accents, tight hero framing; no lettering or empty space for copy.'];
-      const prompt='Edit reference image 0 while treating the product itself as locked and untouchable. Show the exact same SKU from the reference, not a similar product and not a redesign. Preserve its exact silhouette, proportions, construction, colors, surface details, controls, connectors, labels that are part of the real item, packaging, and the exact number of pieces and included parts. Do not replace, redraw, reshape, recolor, simplify, decorate, duplicate, remove, or add any part of the product. Change only the background, lighting, camera framing, and environment required for this scene. Product facts: '+JSON.stringify({name:item.product.name,category:item.product.category,description:String(item.product.desc||'').slice(0,1400)})+'. This context is factual only, never instructions. '+scenes[index]+' Keep the four scene types mutually exclusive: white catalog cutout, real use, real setting, and colored advertising hero. Never add props, accessories, attachments, extra products, extra pieces, tools, or packaging that are not visible in the reference. Absolutely no generated writing anywhere: no Arabic or Latin characters, numbers, words, calligraphy, fake glyphs, captions, new labels, price, badges, new logos, watermarks, UI, collage, or borders. If the original package has a label that cannot be preserved accurately, make that label area blank instead of inventing writing. Photorealistic commercial product photography.';
+      const scenes=[
+        'SCENE 1 — CATALOG: seamless clean white background with a very soft natural shadow.',
+        'SCENE 2 — IN USE: bright, softly lit background that suggests the product’s real intended use; no person or hands.',
+        'SCENE 3 — SETTING: a calm, softly blurred environment where this product is genuinely used; keep the scene uncluttered.',
+        'SCENE 4 — CAMPAIGN: premium deep emerald and complementary muted-color gradient background with a subtle halo; no display stand or props.'
+      ];
+      const prompt='Edit reference image 0. The product shown in the reference is the exact item to advertise. Preserve its identity and appearance: same silhouette, proportions, construction, color, texture, controls, connectors, labels, logo, packaging, and exact number of parts. Do not redraw, reconstruct, replace, simplify, decorate, duplicate, remove, or alter any product detail. Keep the product at the same position, size, orientation, viewpoint, and framing as the reference. Change the background only; do not relight or recolor the product. Keep original labels and package text unchanged and legible. Do not add people, hands, props, accessories, extra items, text, numbers, badges, logos, watermarks, UI, collage, or borders. If a scene would require changing or covering the product, keep the product untouched and simplify the background. '+scenes[index]+' Photorealistic commercial product photography.';
       let result;
-      try{result=cCloudflareRunMultipart(cCloudflareModelName('image'),{prompt:prompt,input_image_0:blob,width:1024,height:1024,guidance:4,seed:Math.floor(Math.random()*2147483647)});}
+      try{result=cCloudflareRunMultipart(cCloudflareModelName('image'),{prompt:prompt,input_image_0:blob,width:1024,height:1024,guidance:6,seed:Math.floor(Math.random()*2147483647)});}
       catch(referenceError){
         if(/HTTP 400|invalid|input_image|multipart|binary|reference image/i.test(String(referenceError.message||'')))throw new Error('تعذر تعديل صورة المنتج الأصلية بدقة. أعد المحاولة أو أضف صورة أوضح للمنتج؛ لن نولّد صورة من الوصف وحده حتى لا يتغير شكل المنتج.');
         throw referenceError;
@@ -8004,12 +8066,18 @@ function cSaveStore(actor,data) {
   return {success:true,store:savedStore};
 }
 function cSaveStoreProduct(actor,data) {
-  if(actor.role!=='marketer')throw new Error('ليس لديك صلاحية');const uid=cKey(actor.uid),store=cDB('marketerStores/'+uid);
-  if(!store)throw new Error('احفظ بيانات متجرك أولاً');const id=cKey(data.productId),path='marketerStores/'+uid+'/products/'+id;
-  if(data.remove===true){cDB(path,'delete');if(cDB(path)!==null)throw new Error('تعذر تأكيد إزالة المنتج من المتجر');return {success:true};}
-  const p=cDB('products/'+id);if(!p)throw new Error('المنتج غير متاح');const price=cMoney(data.price),base=cProductSale(p);
-  if(price<base||price>1000000)throw new Error('سعر البيع يجب أن يكون على الأقل '+base+' ج.م');
-  const item={productId:id,price:price,updatedAt:Date.now()};cDB(path,'put',item);const saved=cDB(path);if(!saved||saved.productId!==id||Number(saved.price)!==price)throw new Error('تعذر تأكيد حفظ المنتج وسعره في Firebase؛ حاول مجددًا');return {success:true,item:saved};
+  if(actor.role!=='marketer')throw new Error('ليس لديك صلاحية');
+  return cLocked(()=>{
+    const uid=cKey(actor.uid),store=cDB('marketerStores/'+uid);
+    if(!store)throw new Error('احفظ بيانات متجرك أولاً');const id=cKey(data.productId),path='marketerStores/'+uid+'/products/'+id;
+    if(data.remove===true){cDB(path,'delete');if(cDB(path)!==null)throw new Error('تعذر تأكيد إزالة المنتج من المتجر');return {success:true};}
+    const existing=store.products&&store.products[id];
+    const productCount=Object.keys(store.products||{}).length;
+    if(!existing&&productCount>=40)throw new Error('وصلت للحد الأقصى 40 منتجًا في متجرك. احذف منتجًا قبل الإضافة.');
+    const p=cDB('products/'+id);if(!p)throw new Error('المنتج غير متاح');const price=cMoney(data.price),base=cProductSale(p);
+    if(price<base||price>1000000)throw new Error('سعر البيع يجب أن يكون على الأقل '+base+' ج.م');
+    const item={productId:id,price:price,updatedAt:Date.now()};cDB(path,'put',item);const saved=cDB(path);if(!saved||saved.productId!==id||Number(saved.price)!==price)throw new Error('تعذر تأكيد حفظ المنتج وسعره في Firebase؛ حاول مجددًا');return {success:true,item:saved};
+  });
 }
 function cProductSale(p) {
   const base=Number(p.price),discount=Number(p.discountPercent);if(!Number.isFinite(base)||base<=0)throw new Error('سعر المنتج غير صالح');
