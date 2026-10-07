@@ -1183,6 +1183,9 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
       adminProducts: [],
       adminProductsLoaded: false,
       adminProductsLoading: false,
+      bulkPriceBusy: false,
+      bulkPriceLatest: null,
+      bulkPriceSelectedIds: new Set(),
       cachedHomeProducts: [],
       cachedCatalogProducts: [],
       catalogProductKeys: [],
@@ -3097,7 +3100,7 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
       else if (viewName === 'marketing-studio') renderMarketingStudio();
       else if (viewName === 'clovs-integrations') renderClovsIntegrations();
       else if (viewName === 'product-manager') { renderProductManagerDashboard(); loadAdminProducts(); }
-      else if (viewName === 'admin-dashboard') renderAdminDashboard();
+      else if (viewName === 'admin-dashboard') { renderAdminDashboard(); loadAdminProducts(); clovsLoadLatestBulkPriceOperation(); }
       else if (viewName === 'super-customizer') renderSuperCustomizerView();
       else if (viewName === 'contests') renderContestsView();
       else if (viewName === 'shipping-rates') renderShippingRatesView();
@@ -5256,6 +5259,7 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
       } finally {
         appState.adminProductsLoading = false;
         if (appState.currentView === 'product-manager') renderProductManagerDashboard();
+        else if (appState.currentView === 'admin-dashboard') renderAdminDashboard();
       }
     }
 
@@ -5764,6 +5768,218 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
     }
 
 
+    const BULK_PRICE_LOG_REF = firebaseDB.ref('bulkPriceAdjustments');
+
+    function clovsBulkPriceProducts() {
+      return (appState.adminProductsLoaded ? appState.adminProducts : []).filter(p => p && /^[A-Za-z0-9_-]{1,128}$/.test(String(p.id)) && Number.isFinite(Number(p.price)) && Number(p.price) > 0);
+    }
+
+    async function clovsLoadLatestBulkPriceOperation() {
+      if (!directAdminAllowed()) return;
+      try {
+        const latestSnap = await BULK_PRICE_LOG_REF.child('latestId').once('value');
+        const id = String(latestSnap.val() || '');
+        if (!id || !/^[A-Za-z0-9_-]{1,128}$/.test(id)) appState.bulkPriceLatest = null;
+        else {
+          const operationSnap = await BULK_PRICE_LOG_REF.child('operations').child(id).once('value');
+          appState.bulkPriceLatest = operationSnap.exists() ? { ...operationSnap.val(), id } : null;
+        }
+      } catch (error) {
+        console.warn('[Clovs] bulk price history read failed:', error);
+        appState.bulkPriceLatest = null;
+      }
+      if (appState.currentView === 'admin-dashboard') renderAdminDashboard();
+    }
+
+    function clovsBulkPriceSelection() {
+      const scope = document.getElementById('bulk-price-scope')?.value || 'all';
+      const products = clovsBulkPriceProducts();
+      if (scope === 'category') {
+        const category = document.getElementById('bulk-price-category')?.value || '';
+        return products.filter(p => String(p.category || 'عام') === category);
+      }
+      if (scope === 'selected') {
+        const ids = appState.bulkPriceSelectedIds;
+        return products.filter(p => ids.has(String(p.id)));
+      }
+      return products;
+    }
+
+    function clovsBulkPriceNewValue(price, operation, method, value) {
+      const raw = operation === 'increase'
+        ? (method === 'percent' ? price * (1 + value / 100) : price + value)
+        : (method === 'percent' ? price * (1 - value / 100) : price - value);
+      return roundMoneyValue(raw);
+    }
+
+    function clovsRenderBulkProductPicker() {
+      const wrap = document.getElementById('bulk-price-product-picker');
+      if (!wrap) return;
+      const query = String(document.getElementById('bulk-price-product-search')?.value || '').trim().toLowerCase();
+      const products = clovsBulkPriceProducts().filter(p => !query || `${p.name} ${p.id}`.toLowerCase().includes(query)).slice(0, 100);
+      const selected = appState.bulkPriceSelectedIds;
+      wrap.innerHTML = products.map(p => `<label class="flex items-center gap-3 rounded-xl border border-slate-100 p-2.5 hover:bg-slate-50 cursor-pointer"><input type="checkbox" value="${escapeHtml(p.id)}" ${selected.has(String(p.id)) ? 'checked' : ''} onchange="clovsBulkPriceToggleProduct(this)" class="w-4 h-4 accent-emerald-600"><img src="${escapeHtml(safeImageUrl(productMainImage(p)))}" class="w-9 h-9 rounded-lg object-cover" alt=""><span class="min-w-0"><strong class="block truncate text-xs">${escapeHtml(p.name)}</strong><small class="text-slate-500">${money(p.price)} ج.م · ${escapeHtml(p.category || 'عام')}</small></span></label>`).join('') || '<p class="p-3 text-xs text-slate-500">لا توجد منتجات مطابقة.</p>';
+      const count = document.getElementById('bulk-price-selected-count');
+      if (count) count.textContent = `تم اختيار ${selected.size} منتج`;
+    }
+
+    function clovsBulkPriceToggleProduct(input) {
+      const id = String(input.value || '');
+      if (input.checked) appState.bulkPriceSelectedIds.add(id);
+      else appState.bulkPriceSelectedIds.delete(id);
+      const count = document.getElementById('bulk-price-selected-count');
+      if (count) count.textContent = `تم اختيار ${appState.bulkPriceSelectedIds.size} منتج`;
+      clovsPreviewBulkPriceAdjustment();
+    }
+
+    function clovsBulkPriceScopeChanged() {
+      const scope = document.getElementById('bulk-price-scope')?.value;
+      document.getElementById('bulk-price-category-wrap')?.classList.toggle('hidden', scope !== 'category');
+      document.getElementById('bulk-price-selected-wrap')?.classList.toggle('hidden', scope !== 'selected');
+      clovsPreviewBulkPriceAdjustment();
+    }
+
+    function clovsPreviewBulkPriceAdjustment() {
+      const output = document.getElementById('bulk-price-preview');
+      if (!output) return;
+      const allProducts = clovsBulkPriceSelection();
+      const op = document.getElementById('bulk-price-operation')?.value || 'decrease';
+      const method = document.getElementById('bulk-price-method')?.value || 'fixed';
+      const value = Number(document.getElementById('bulk-price-value')?.value);
+      if (!allProducts.length) {
+        output.innerHTML = '<p class="text-sm text-slate-500">حمّل المنتجات أولًا، ثم اختر نطاق التعديل.</p>';
+        return;
+      }
+      if (!Number.isFinite(value) || value <= 0 || (method === 'percent' && value > 95)) {
+        output.innerHTML = '<p class="text-sm text-slate-500">اكتب قيمة أكبر من صفر. النسبة المئوية حدها الأقصى 95٪.</p>';
+        return;
+      }
+      const valid = [], skipped = [];
+      for (const p of allProducts) {
+        const oldPrice = Number(p.price), newPrice = clovsBulkPriceNewValue(oldPrice, op, method, value);
+        if (!Number.isFinite(newPrice) || newPrice < 1) skipped.push({ p, oldPrice, newPrice });
+        else valid.push({ p, oldPrice, newPrice });
+      }
+      const samples = valid.slice(0, 4).map(x => `<li>${escapeHtml(x.p.name)}: <span class="text-slate-500">${money(x.oldPrice)} ج.م</span> ← <strong>${money(x.newPrice)} ج.م</strong></li>`).join('');
+      output.innerHTML = `<div class="flex flex-wrap gap-2 text-xs font-bold"><span class="rounded-full bg-emerald-50 text-emerald-800 px-3 py-1">سيتغير ${valid.length} منتج</span><span class="rounded-full bg-slate-100 text-slate-700 px-3 py-1">إجمالي النطاق ${allProducts.length}</span>${skipped.length ? `<span class="rounded-full bg-amber-50 text-amber-800 px-3 py-1">تم استبعاد ${skipped.length} حتى لا يقل السعر عن 1 ج.م</span>` : ''}</div>${samples ? `<ul class="mt-3 space-y-1 text-sm">${samples}</ul>` : ''}<p class="mt-3 text-[11px] leading-6 text-slate-500">التعديل على السعر الأساسي. أي نسبة خصم محفوظة للمنتج تظل كما هي. لن يتم تطبيق أسعار أقل من 1 جنيه.</p>`;
+    }
+
+    async function clovsApplyBulkPriceAdjustment() {
+      if (!directAdminAllowed() || appState.bulkPriceBusy) return;
+      if (!appState.adminProductsLoaded) return showToast('استنى لحد ما قائمة المنتجات تكتمل', 'error');
+      const operation = document.getElementById('bulk-price-operation')?.value || 'decrease';
+      const method = document.getElementById('bulk-price-method')?.value || 'fixed';
+      const value = Number(document.getElementById('bulk-price-value')?.value);
+      const scope = document.getElementById('bulk-price-scope')?.value || 'all';
+      const selected = clovsBulkPriceSelection();
+      if (!Number.isFinite(value) || value <= 0 || (method === 'percent' && value > 95) || !selected.length) return showToast('راجع قيمة التعديل والمنتجات المحددة', 'error');
+      const verb = operation === 'increase' ? 'زيادة' : 'خصم';
+      const methodLabel = method === 'percent' ? `${value}%` : `${money(value)} جنيه`;
+      const scopeLabel = scope === 'all' ? 'كل منتجات الموقع' : scope === 'category' ? `التصنيف ${document.getElementById('bulk-price-category')?.value || ''}` : `${selected.length} منتج محدد`;
+      if (!confirm(`تأكيد ${verb} ${methodLabel} على ${scopeLabel}؟\nسيتم حفظ سجل كامل يتيح التراجع عن هذا التعديل الأخير.`)) return;
+      appState.bulkPriceBusy = true;
+      const applyButton = document.getElementById('bulk-price-apply');
+      if (applyButton) { applyButton.disabled = true; applyButton.textContent = 'جاري التطبيق والتحقق...'; }
+      try {
+        // Read live source records immediately before applying, so a stale admin cache cannot overwrite newer prices.
+        const liveSnaps = await Promise.all(selected.map(p => productsRef.child(p.id).once('value')));
+        const live = liveSnaps.map((snap, i) => snap.exists() ? { ...snap.val(), id: selected[i].id } : null);
+        if (live.some(p => !p || !Number.isFinite(Number(p.price)) || Number(p.price) <= 0)) throw new Error('بعض المنتجات تغيرت أو حذفت. حدّث القائمة وأعد المعاينة.');
+        const changes = {}, patch = {}, catalogRecords = {};
+        live.forEach(p => {
+          const oldPrice = roundMoneyValue(Number(p.price));
+          const newPrice = clovsBulkPriceNewValue(oldPrice, operation, method, value);
+          if (!Number.isFinite(newPrice) || newPrice < 1 || newPrice === oldPrice) return;
+          changes[p.id] = { oldPrice, newPrice };
+          patch[`products/${p.id}/price`] = newPrice;
+          const record = buildCatalogRecord({ ...p, price: newPrice }, p.id);
+          if (!record) throw new Error(`تعذر تجهيز فهرس المنتج ${p.name}`);
+          catalogRecords[p.id] = record;
+          patch[`productCatalog/${p.id}`] = record;
+        });
+        const ids = Object.keys(changes);
+        if (!ids.length) throw new Error('لا توجد أسعار قابلة للتغيير بهذه القيمة.');
+        if (ids.length > 5000) throw new Error('عدد المنتجات كبير جدًا لعملية واحدة. قسّم التعديل على تصنيفات.');
+        const opRef = BULK_PRICE_LOG_REF.child('operations').push();
+        const operationId = opRef.key;
+        const log = {
+          id: operationId, operation, method, value, scope,
+          category: scope === 'category' ? String(document.getElementById('bulk-price-category')?.value || '') : '',
+          actorUid: firebaseAuth.currentUser?.uid || '',
+          actorName: String(appState.currentUser?.name || appState.currentUser?.email || 'مدير').slice(0, 120),
+          createdAt: Date.now(), appliedCount: ids.length, skippedCount: live.length - ids.length,
+          changes, undone: false
+        };
+        patch[`bulkPriceAdjustments/operations/${operationId}`] = log;
+        patch['bulkPriceAdjustments/latestId'] = operationId;
+        await firebaseDB.ref().update(patch);
+        const verifySnaps = await Promise.all(ids.map(id => Promise.all([productsRef.child(id).child('price').once('value'), productCatalogRef.child(id).child('price').once('value')])));
+        const mismatch = verifySnaps.findIndex((pair, i) => Number(pair[0].val()) !== changes[ids[i]].newPrice || Number(pair[1].val()) !== changes[ids[i]].newPrice);
+        if (mismatch >= 0) throw new Error('تم الحفظ لكن تعذر تأكيد كل الأسعار في الفهرس. أعد تحميل الصفحة وافحص سجل آخر تعديل قبل أي تغيير جديد.');
+        appState.bulkPriceLatest = log;
+        clearProductCaches();
+        appState.adminProductsLoaded = false;
+        await loadAdminProducts(true);
+        showToast(`تم تعديل أسعار ${ids.length} منتج وحفظ سجل التراجع`);
+      } catch (error) {
+        console.error('[Clovs bulk price adjustment]', error);
+        showToast(String(error?.message || error).slice(0, 220), 'error');
+      } finally {
+        appState.bulkPriceBusy = false;
+        if (document.getElementById('view-admin-dashboard') && appState.currentView === 'admin-dashboard') renderAdminDashboard();
+      }
+    }
+
+    async function clovsUndoLatestBulkPriceAdjustment() {
+      if (!directAdminAllowed() || appState.bulkPriceBusy) return;
+      const op = appState.bulkPriceLatest;
+      if (!op || op.undone || !op.changes || typeof op.changes !== 'object') return showToast('لا يوجد تعديل جماعي متاح للتراجع', 'error');
+      if (!confirm(`التراجع عن آخر تعديل جماعي وإرجاع أسعار ${Number(op.appliedCount) || Object.keys(op.changes).length} منتج؟\nلن يتم التراجع إذا تغير سعر أي منتج بعد العملية.`)) return;
+      appState.bulkPriceBusy = true;
+      try {
+        const ids = Object.keys(op.changes);
+        const snaps = await Promise.all(ids.map(id => productsRef.child(id).child('price').once('value')));
+        const changed = snaps.findIndex((snap, i) => !snap.exists() || roundMoneyValue(Number(snap.val())) !== roundMoneyValue(Number(op.changes[ids[i]]?.newPrice)));
+        if (changed >= 0) throw new Error(`لم يتم التراجع: سعر منتج ${ids[changed]} تغير بعد التعديل. راجع المنتج يدويًا حتى لا يتم استبدال تعديل أحدث.`);
+        const patch = {};
+        for (const id of ids) {
+          const item = op.changes[id];
+          const productSnap = await productsRef.child(id).once('value');
+          if (!productSnap.exists()) throw new Error(`لم يتم التراجع: المنتج ${id} لم يعد موجودًا.`);
+          const product = { ...productSnap.val(), id, price: Number(item.oldPrice) };
+          const record = buildCatalogRecord(product, id);
+          if (!record) throw new Error(`تعذر تجهيز فهرس المنتج ${id} أثناء التراجع.`);
+          patch[`products/${id}/price`] = roundMoneyValue(Number(item.oldPrice));
+          patch[`productCatalog/${id}`] = record;
+        }
+        patch[`bulkPriceAdjustments/operations/${op.id}/undone`] = true;
+        patch[`bulkPriceAdjustments/operations/${op.id}/undoneAt`] = Date.now();
+        patch[`bulkPriceAdjustments/operations/${op.id}/undoneBy`] = firebaseAuth.currentUser?.uid || '';
+        await firebaseDB.ref().update(patch);
+        const verified = await Promise.all(ids.map(id => productsRef.child(id).child('price').once('value')));
+        if (verified.some((snap, i) => roundMoneyValue(Number(snap.val())) !== roundMoneyValue(Number(op.changes[ids[i]].oldPrice)))) throw new Error('تم إرسال التراجع لكن تعذر تأكيد كل الأسعار. أعد تحميل الصفحة وافحص المنتجات.');
+        appState.bulkPriceLatest = { ...op, undone: true, undoneAt: Date.now() };
+        clearProductCaches();
+        appState.adminProductsLoaded = false;
+        await loadAdminProducts(true);
+        showToast('تم التراجع عن آخر تعديل جماعي');
+      } catch (error) {
+        console.error('[Clovs bulk price undo]', error);
+        showToast(String(error?.message || error).slice(0, 220), 'error');
+      } finally {
+        appState.bulkPriceBusy = false;
+        if (appState.currentView === 'admin-dashboard') renderAdminDashboard();
+      }
+    }
+
+    function clovsBulkPricePanelHTML() {
+      const products = clovsBulkPriceProducts();
+      const categories = [...new Set(products.map(p => String(p.category || 'عام')))].sort((a,b) => a.localeCompare(b, 'ar'));
+      const op = appState.bulkPriceLatest;
+      const latest = op ? `<div class="mt-4 rounded-2xl border ${op.undone ? 'border-slate-200 bg-slate-50' : 'border-amber-200 bg-amber-50'} p-4 text-sm"><div class="flex flex-wrap items-center justify-between gap-3"><div><strong>${op.undone ? 'آخر عملية تم التراجع عنها' : 'آخر تعديل جماعي محفوظ'}</strong><p class="mt-1 text-xs text-slate-600">${escapeHtml(op.actorName || 'مدير')} · ${Number(op.appliedCount) || 0} منتج · ${op.createdAt ? new Date(Number(op.createdAt)).toLocaleString('ar-EG') : ''}</p></div>${!op.undone ? `<button id="bulk-price-undo" onclick="clovsUndoLatestBulkPriceAdjustment()" class="rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white" ${appState.bulkPriceBusy ? 'disabled' : ''}><i class="fa-solid fa-rotate-left ml-1"></i> تراجع عن آخر تعديل</button>` : ''}</div><p class="mt-2 text-xs text-slate-600">${op.operation === 'increase' ? 'زيادة' : 'خصم'} ${op.method === 'percent' ? `${money(op.value)}٪` : `${money(op.value)} جنيه`} · ${op.scope === 'all' ? 'كل المنتجات' : op.scope === 'category' ? `تصنيف ${escapeHtml(op.category || '')}` : 'منتجات محددة'}${Number(op.skippedCount) ? ` · استُبعد ${Number(op.skippedCount)} منتجًا لحد السعر الأدنى` : ''}</p></div>` : '<p class="mt-4 text-xs text-slate-500">لا يوجد تعديل جماعي سابق محفوظ.</p>';
+      return `<section class="bg-white p-6 rounded-3xl border border-slate-100 space-y-4"><div><div class="flex items-center gap-2"><span class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 grid place-items-center"><i class="fa-solid fa-tags"></i></span><div><h3 class="font-black text-slate-900 text-lg">تعديل الأسعار الجماعي</h3><p class="text-xs text-slate-500 mt-1">خصم أو زيادة مبلغ أو نسبة، مع معاينة وسجل محفوظ للتراجع.</p></div></div></div>${!appState.adminProductsLoaded ? `<div class="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">${appState.adminProductsLoading ? 'جاري تحميل المنتجات...' : 'حمّل المنتجات لبدء المعاينة.'}</div>` : `<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3"><label class="text-xs font-bold text-slate-700">العملية<select id="bulk-price-operation" onchange="clovsPreviewBulkPriceAdjustment()" class="mt-1 w-full rounded-xl border border-slate-200 bg-white p-3 text-sm"><option value="decrease">خصم من السعر الأساسي</option><option value="increase">زيادة على السعر الأساسي</option></select></label><label class="text-xs font-bold text-slate-700">طريقة التعديل<select id="bulk-price-method" onchange="clovsPreviewBulkPriceAdjustment()" class="mt-1 w-full rounded-xl border border-slate-200 bg-white p-3 text-sm"><option value="fixed">مبلغ ثابت بالجنيه</option><option value="percent">نسبة مئوية</option></select></label><label class="text-xs font-bold text-slate-700">القيمة<input id="bulk-price-value" type="number" min="0.01" max="1000000" step="0.01" value="50" oninput="clovsPreviewBulkPriceAdjustment()" class="mt-1 w-full rounded-xl border border-slate-200 bg-white p-3 text-sm" placeholder="مثال: 50"></label><label class="text-xs font-bold text-slate-700">تطبيق على<select id="bulk-price-scope" onchange="clovsBulkPriceScopeChanged()" class="mt-1 w-full rounded-xl border border-slate-200 bg-white p-3 text-sm"><option value="all">كل المنتجات</option><option value="category">تصنيف معين</option><option value="selected">منتجات أحددها</option></select></label></div><div id="bulk-price-category-wrap" class="hidden"><label class="text-xs font-bold text-slate-700">التصنيف<select id="bulk-price-category" onchange="clovsPreviewBulkPriceAdjustment()" class="mt-1 w-full rounded-xl border border-slate-200 bg-white p-3 text-sm">${categories.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select></label></div><div id="bulk-price-selected-wrap" class="hidden rounded-2xl border border-slate-100 p-3"><div class="flex flex-wrap items-center justify-between gap-2"><strong id="bulk-price-selected-count" class="text-xs">تم اختيار ${appState.bulkPriceSelectedIds.size} منتج</strong><input id="bulk-price-product-search" type="search" oninput="clovsRenderBulkProductPicker()" class="rounded-xl border border-slate-200 px-3 py-2 text-xs" placeholder="ابحث بالاسم أو الكود"></div><div id="bulk-price-product-picker" class="mt-3 grid max-h-60 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">${products.slice(0,100).map(p => `<label class="flex items-center gap-3 rounded-xl border border-slate-100 p-2.5 hover:bg-slate-50 cursor-pointer"><input type="checkbox" value="${escapeHtml(p.id)}" ${appState.bulkPriceSelectedIds.has(String(p.id)) ? 'checked' : ''} onchange="clovsBulkPriceToggleProduct(this)" class="w-4 h-4 accent-emerald-600"><img src="${escapeHtml(safeImageUrl(productMainImage(p)))}" class="w-9 h-9 rounded-lg object-cover" alt=""><span class="min-w-0"><strong class="block truncate text-xs">${escapeHtml(p.name)}</strong><small class="text-slate-500">${money(p.price)} ج.م · ${escapeHtml(p.category || 'عام')}</small></span></label>`).join('')}</div><p class="mt-2 text-[11px] text-slate-500">اعرض حتى 100 نتيجة في القائمة؛ استخدم البحث للوصول لمنتجات أخرى.</p></div><div id="bulk-price-preview" class="rounded-2xl bg-slate-50 p-4" role="status"></div><button id="bulk-price-apply" onclick="clovsApplyBulkPriceAdjustment()" class="rounded-xl bg-emerald-600 px-5 py-3 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-50" ${appState.bulkPriceBusy || !products.length ? 'disabled' : ''}>معاينة ثم تطبيق التعديل</button><p class="text-[11px] leading-6 text-slate-500">المعاينة توضح عدد المنتجات قبل التنفيذ. أقل سعر مسموح به 1 ج.م، والأسعار والعروض المحفوظة في الطلبات القديمة لا تتغير.</p>`}${latest}</section>`;
+    }
+
     function renderAdminDashboard() {
       const container = document.getElementById('view-admin-dashboard');
       const user = appState.currentUser;
@@ -5835,6 +6051,8 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
           ` : ''}
         </div>
 
+        ${clovsBulkPricePanelHTML()}
+
         <div class="bg-white p-6 rounded-3xl border border-slate-100 space-y-4">
           <h3 class="font-black text-slate-900 text-lg">جميع أوردرات المحافظات</h3>
           <div class="overflow-x-auto">
@@ -5890,6 +6108,7 @@ body.clovs-store-mode #modal-actions>.clovs-primary-button{background:#a15b38!im
 
         </div>
       `;
+      clovsPreviewBulkPriceAdjustment();
     }
 
     function openMarketerPasswordModal(uid, name) {
@@ -8099,7 +8318,8 @@ function cReserveAIProduct(actor,id) {
   });
 }
 </script>
-<script id="clovs-rules-source" type="application/json">{
+<script id="clovs-rules-source" type="application/json">
+{
   "rules": {
     "products": {
       ".read": true,
@@ -8483,8 +8703,26 @@ function cReserveAIProduct(actor,id) {
     "shippingRates": {
       ".read": true,
       ".write": "auth != null && (auth.uid === 'zAeUYXEN3jS18kBC3QXZOVcedk12' || root.child('staffRoles').child(auth.uid).val() === 'admin')"
+    },
+    "bulkPriceAdjustments": {
+      ".read": "auth != null && (auth.uid === 'zAeUYXEN3jS18kBC3QXZOVcedk12' || root.child('staffRoles').child(auth.uid).val() === 'admin')",
+      ".write": "auth != null && (auth.uid === 'zAeUYXEN3jS18kBC3QXZOVcedk12' || root.child('staffRoles').child(auth.uid).val() === 'admin')",
+      "latestId": {
+        ".validate": "!newData.exists() || newData.isString()"
+      },
+      "operations": {
+        "$operationId": {
+          ".validate": "newData.hasChildren(['id','operation','method','value','scope','actorUid','createdAt','appliedCount','changes','undone']) && newData.child('id').val() === $operationId && (newData.child('operation').val() === 'increase' || newData.child('operation').val() === 'decrease') && (newData.child('method').val() === 'fixed' || newData.child('method').val() === 'percent') && newData.child('value').isNumber() && newData.child('value').val() > 0 && newData.child('value').val() <= 1000000 && (newData.child('scope').val() === 'all' || newData.child('scope').val() === 'category' || newData.child('scope').val() === 'selected') && newData.child('createdAt').isNumber() && newData.child('appliedCount').isNumber() && newData.child('appliedCount').val() > 0 && newData.child('appliedCount').val() <= 5000 && newData.child('changes').hasChildren()",
+          "changes": {
+            "$productId": {
+              ".validate": "$productId.matches(/^[A-Za-z0-9_-]{1,128}$/) && newData.hasChildren(['oldPrice','newPrice']) && newData.child('oldPrice').isNumber() && newData.child('oldPrice').val() >= 1 && newData.child('newPrice').isNumber() && newData.child('newPrice').val() >= 1"
+            }
+          }
+        }
+      }
     }
   }
-}</script>
+}
+</script>
 </body>
 </html>
